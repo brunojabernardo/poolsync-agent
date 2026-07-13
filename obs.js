@@ -20,7 +20,9 @@ const ACTIONS = new Set([
   'startStream', 'stopStream', 'toggleStream',
   'startRecord', 'stopRecord', 'toggleRecord',
   // Camera identification
-  'getCameras', 'setCameraDevice', 'getCameraThumbnails'
+  'getCameras', 'setCameraDevice', 'getCameraThumbnails',
+  // Layout detection (which camera sits in which quadrant of a grid scene)
+  'getLayout'
 ]);
 
 // Friendly label for a camera input, e.g. "Camera Mesa 1" → "Mesa 1".
@@ -260,6 +262,53 @@ class ObsManager extends EventEmitter {
     return { thumbnails };
   }
 
+  // ── Layout detection ──
+  // Read where each camera sits inside a grid scene (default "LIVE - All
+  // Tables") and classify it into a quadrant, so the app can show/label the
+  // physical arrangement without the operator measuring anything.
+  async _getLayout(sceneName) {
+    const scene = sceneName || 'LIVE - All Tables';
+    const video = await this.obs.call('GetVideoSettings').catch(() => ({}));
+    const baseW = Number(video.baseWidth) || 1920;
+    const baseH = Number(video.baseHeight) || 1080;
+
+    let items = [];
+    try {
+      const res = await this.obs.call('GetSceneItemList', { sceneName: scene });
+      items = res.sceneItems || [];
+    } catch (err) {
+      return { scene, baseWidth: baseW, baseHeight: baseH, cameras: [], error: err?.message || String(err) };
+    }
+
+    const cameras = [];
+    for (const it of items) {
+      const name = it.sourceName || '';
+      const isCamera = it.inputKind === 'dshow_input' || /mesa\s*\d+/i.test(name) || /camera/i.test(name);
+      if (!isCamera) continue;
+
+      const t = it.sceneItemTransform || {};
+      const a = Number(t.alignment) || 0; // OBS align bitflags: L=1 R=2 T=4 B=8
+      const w = Number(t.width) || 0;
+      const h = Number(t.height) || 0;
+      const px = Number(t.positionX) || 0;
+      const py = Number(t.positionY) || 0;
+      const centerX = (a & 1) ? px + w / 2 : (a & 2) ? px - w / 2 : px;
+      const centerY = (a & 4) ? py + h / 2 : (a & 8) ? py - h / 2 : py;
+      const vert = centerY < baseH / 2 ? 'TOP' : 'BOTTOM';
+      const horiz = centerX < baseW / 2 ? 'LEFT' : 'RIGHT';
+
+      cameras.push({
+        inputName: name,
+        label: cameraLabel(name),
+        quadrant: `${vert}_${horiz}`,
+        centerX: Math.round(centerX),
+        centerY: Math.round(centerY)
+      });
+    }
+    cameras.sort((x, y) => x.label.localeCompare(y.label, undefined, { numeric: true }));
+    return { scene, baseWidth: baseW, baseHeight: baseH, cameras };
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -282,6 +331,8 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._getCameras() };
         case 'getCameraThumbnails':
           return { ok: true, data: await this._getCameraThumbnails(params && params.names) };
+        case 'getLayout':
+          return { ok: true, data: await this._getLayout(params && params.scene) };
 
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });

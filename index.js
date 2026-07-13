@@ -7,6 +7,7 @@
 //   node index.js scenes     Connect, list scenes, exit
 //   node index.js scene "LIVE - Table 1"   Switch program scene once, exit
 //   node index.js cameras    Connect, list camera inputs + available devices, exit
+//   node index.js layout ["Scene"]   Show which camera sits in which quadrant
 //
 // The one-shot commands let you verify OBS control WITHOUT the server configured.
 const config = require('./config');
@@ -78,6 +79,19 @@ async function runOneShot(command, arg) {
         });
       }
     }
+  } else if (command === 'layout') {
+    const res = await obs.execute('getLayout', { scene: arg || undefined });
+    if (!res.ok) { logLine('error', res.error); }
+    else {
+      const d = res.data;
+      console.log(`\nLayout de "${d.scene}" (${d.baseWidth}x${d.baseHeight}):`);
+      if (d.error) { logLine('warn', d.error); }
+      const q = { TOP_LEFT: 'CIMA-ESQ', TOP_RIGHT: 'CIMA-DIR', BOTTOM_LEFT: 'BAIXO-ESQ', BOTTOM_RIGHT: 'BAIXO-DIR' };
+      if (!d.cameras.length) console.log('  (nenhuma câmara encontrada nesta cena)');
+      for (const c of d.cameras) {
+        console.log(`  ${(q[c.quadrant] || c.quadrant).padEnd(9)} → ${c.label}  [${c.inputName}]  (centro ${c.centerX},${c.centerY})`);
+      }
+    }
   } else if (command === 'scene') {
     if (!arg) { logLine('error', 'Falta o nome da cena: node index.js scene "Nome"'); }
     else {
@@ -123,7 +137,7 @@ async function runAgent() {
 const [, , cmd, ...rest] = process.argv;
 banner();
 
-if (cmd === 'status' || cmd === 'scenes' || cmd === 'scene' || cmd === 'cameras') {
+if (cmd === 'status' || cmd === 'scenes' || cmd === 'scene' || cmd === 'cameras' || cmd === 'layout') {
   runOneShot(cmd, rest.join(' ').trim()).catch((err) => {
     logLine('error', err.message);
     process.exit(1);
@@ -134,6 +148,6 @@ if (cmd === 'status' || cmd === 'scenes' || cmd === 'scene' || cmd === 'cameras'
     process.exit(1);
   });
 } else {
-  console.log(`Comando desconhecido: "${cmd}"\nUsa: node index.js [status|scenes|scene "Nome"|cameras]`);
+  console.log(`Comando desconhecido: "${cmd}"\nUsa: node index.js [status|scenes|scene "Nome"|cameras|layout]`);
   process.exit(1);
 }

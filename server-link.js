@@ -55,9 +55,9 @@ class ServerLink {
       this.log('info', `Comando recebido: ${action} ${params.scene ? `→ "${params.scene}"` : ''}`.trim());
       const result = await this.obs.execute(action, params);
       if (typeof ack === 'function') ack(result);
-      // State also flows up via the 'state' listener, but push proactively so
-      // a command that changed nothing observable still confirms current state.
-      this.pushState(this.obs.snapshot());
+      // Note: we do NOT push state here. Real OBS changes propagate via the
+      // 'state' listener below; pushing on every command (incl. read-only ones
+      // like camera-thumbnail polling) would flood clients with obs:state.
     });
 
     // Keep the server's mirror fresh whenever OBS state changes.
