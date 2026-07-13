@@ -466,7 +466,7 @@ class ObsManager extends EventEmitter {
     if (!scene) return { image: null, scene: null };
     try {
       const shot = await this.obs.call('GetSourceScreenshot', {
-        sourceName: scene, imageFormat: 'jpg', imageWidth: 640
+        sourceName: scene, imageFormat: 'jpg', imageWidth: 960, imageCompressionQuality: 75
       });
       return { image: shot.imageData || null, scene };
     } catch (_) {
