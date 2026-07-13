@@ -33,7 +33,9 @@ const ACTIONS = new Set([
   // Streaming destination (RTMP service + key)
   'getStreamSettings', 'setStreamSettings',
   // Live program preview (screenshot of what's on air)
-  'getProgramPreview'
+  'getProgramPreview',
+  // Per-camera framing (zoom + pan) via a crop filter on the input
+  'setCameraFraming'
 ]);
 
 // Named OBS services + the EXACT ingest server OBS expects for each (read from
@@ -57,6 +59,11 @@ function cameraLabel(name) {
   const m = /mesa\s*(\d+)/i.exec(String(name || ''));
   return m ? `Mesa ${m[1]}` : String(name || '');
 }
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+// Name of the crop/pad filter the app manages on each camera for zoom + pan.
+const ZOOM_FILTER = 'PoolSync Zoom';
 
 class ObsManager extends EventEmitter {
   constructor(config) {
@@ -254,7 +261,9 @@ class ObsManager extends EventEmitter {
         const v = s.inputSettings && (s.inputSettings.video_device_id || s.inputSettings.last_video_device_id);
         currentDeviceId = v ? String(v) : null;
       } catch (_) {}
-      out.push({ inputName: name, label: cameraLabel(name), devices, currentDeviceId });
+      let framing = { zoom: 0, panX: 0, panY: 0 };
+      try { framing = await this._getCameraFraming(name); } catch (_) {}
+      out.push({ inputName: name, label: cameraLabel(name), devices, currentDeviceId, framing });
     }
     out.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
     return { cameras: out };
@@ -474,6 +483,65 @@ class ObsManager extends EventEmitter {
     }
   }
 
+  // ── Per-camera framing (zoom + pan), global via a crop filter on the input ──
+  // Reads the current crop + the post-filter source size, then recovers the
+  // native resolution by adding the crop back (so zoom doesn't compound).
+  async _cameraCropAndDims(inputName) {
+    let crop = { left: 0, top: 0, right: 0, bottom: 0 };
+    try {
+      const f = await this.obs.call('GetSourceFilter', { sourceName: inputName, filterName: ZOOM_FILTER });
+      const s = f.filterSettings || {};
+      crop = { left: +s.left || 0, top: +s.top || 0, right: +s.right || 0, bottom: +s.bottom || 0 };
+    } catch (_) {}
+    let w = 1920, h = 1080;
+    for (const scene of ['LIVE - All Tables', 'LIVE - Table 1', 'LIVE - Table 2']) {
+      try {
+        const { sceneItems } = await this.obs.call('GetSceneItemList', { sceneName: scene });
+        const it = (sceneItems || []).find((x) => x.sourceName === inputName);
+        const t = it && it.sceneItemTransform;
+        if (t && t.sourceWidth) { w = t.sourceWidth; h = t.sourceHeight; break; }
+      } catch (_) {}
+    }
+    return { crop, nativeW: w + crop.left + crop.right, nativeH: h + crop.top + crop.bottom };
+  }
+
+  async _getCameraFraming(inputName) {
+    const { crop, nativeW, nativeH } = await this._cameraCropAndDims(inputName);
+    const zoom = nativeW ? (crop.left + crop.right) / nativeW : 0;
+    const panX = (crop.left + crop.right) ? (crop.left - crop.right) / (crop.left + crop.right) : 0;
+    const panY = (crop.top + crop.bottom) ? (crop.top - crop.bottom) / (crop.top + crop.bottom) : 0;
+    const r2 = (n) => Math.round(n * 100) / 100;
+    return { zoom: r2(zoom), panX: r2(panX), panY: r2(panY) };
+  }
+
+  async _setCameraFraming(params) {
+    const inputName = params && params.inputName;
+    if (!inputName) throw new Error('inputName em falta');
+    const zoom = clamp(Number(params.zoom) || 0, 0, 0.8);
+    const panX = clamp(Number(params.panX) || 0, -1, 1);
+    const panY = clamp(Number(params.panY) || 0, -1, 1);
+
+    const { nativeW, nativeH } = await this._cameraCropAndDims(inputName);
+    const halfX = Math.round((zoom * nativeW) / 2);
+    const halfY = Math.round((zoom * nativeH) / 2);
+    const settings = {
+      relative: true,
+      left: Math.max(0, Math.round(halfX + panX * halfX)),
+      right: Math.max(0, Math.round(halfX - panX * halfX)),
+      top: Math.max(0, Math.round(halfY + panY * halfY)),
+      bottom: Math.max(0, Math.round(halfY - panY * halfY))
+    };
+    // Update the filter, creating it the first time.
+    try {
+      await this.obs.call('SetSourceFilterSettings', { sourceName: inputName, filterName: ZOOM_FILTER, filterSettings: settings });
+    } catch (_) {
+      await this.obs.call('CreateSourceFilter', {
+        sourceName: inputName, filterName: ZOOM_FILTER, filterKind: 'crop_filter', filterSettings: settings
+      });
+    }
+    return { inputName, framing: await this._getCameraFraming(inputName) };
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -508,6 +576,8 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._setStreamSettings(params) };
         case 'getProgramPreview':
           return { ok: true, data: await this._getProgramPreview() };
+        case 'setCameraFraming':
+          return { ok: true, data: await this._setCameraFraming(params) };
 
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });
