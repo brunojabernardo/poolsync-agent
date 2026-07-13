@@ -34,10 +34,11 @@ const ACTIONS = new Set([
   'getStreamSettings', 'setStreamSettings'
 ]);
 
-// Known RTMPS ingest servers per platform (key is per-user).
-const RTMP_SERVERS = {
-  facebook: 'rtmps://live-api-s.facebook.com:443/rtmp/',
-  youtube: 'rtmp://a.rtmp.youtube.com/live2'
+// Named OBS services + their ingest server. Using the named service makes OBS
+// show e.g. "Facebook Live" and use OBS's maintained/current ingest URL.
+const PLATFORMS = {
+  facebook: { service: 'Facebook Live', server: 'rtmps://live-api-s.facebook.com:443/rtmp/' },
+  youtube: { service: 'YouTube - RTMPS', server: 'rtmps://a.rtmps.youtube.com:443/live2' }
 };
 
 // Canvas quadrant → top-left corner factor.
@@ -418,25 +419,46 @@ class ObsManager extends EventEmitter {
   async _getStreamSettings() {
     const r = await this.obs.call('GetStreamServiceSettings');
     const s = r.streamServiceSettings || {};
+    const service = String(s.service || '');
     const server = String(s.server || '');
+    const hay = `${service} ${server}`.toLowerCase();
     let platform = 'custom';
-    for (const [name, url] of Object.entries(RTMP_SERVERS)) {
-      if (server === url) { platform = name; break; }
-    }
-    return { type: r.streamServiceType || null, platform, server, keySet: !!s.key };
+    if (hay.includes('facebook')) platform = 'facebook';
+    else if (hay.includes('youtube')) platform = 'youtube';
+    return { type: r.streamServiceType || null, platform, service: service || null, server, keySet: !!s.key };
   }
 
   async _setStreamSettings(params) {
     const platform = (params && params.platform) || 'custom';
     const key = String((params && params.key) || '');
-    let server = String((params && params.server) || '');
-    if (platform !== 'custom') server = RTMP_SERVERS[platform] || server;
-    if (!server) throw new Error('servidor RTMP em falta');
     if (!key) throw new Error('chave de stream em falta');
-    await this.obs.call('SetStreamServiceSettings', {
-      streamServiceType: 'rtmp_custom',
-      streamServiceSettings: { server, key, use_auth: false, bwtest: false }
-    });
+
+    if (platform === 'custom') {
+      const server = String((params && params.server) || '');
+      if (!server) throw new Error('servidor RTMP em falta');
+      await this.obs.call('SetStreamServiceSettings', {
+        streamServiceType: 'rtmp_custom',
+        streamServiceSettings: { server, key, use_auth: false, bwtest: false }
+      });
+      return this._getStreamSettings();
+    }
+
+    const p = PLATFORMS[platform];
+    if (!p) throw new Error('plataforma desconhecida');
+    // Prefer OBS's named service (shows "Facebook Live"/"YouTube" and uses OBS's
+    // current ingest URL); fall back to a custom RTMPS server if this OBS build
+    // doesn't have that named service.
+    try {
+      await this.obs.call('SetStreamServiceSettings', {
+        streamServiceType: 'rtmp_common',
+        streamServiceSettings: { service: p.service, server: p.server, key }
+      });
+    } catch (_) {
+      await this.obs.call('SetStreamServiceSettings', {
+        streamServiceType: 'rtmp_custom',
+        streamServiceSettings: { server: p.server, key, use_auth: false, bwtest: false }
+      });
+    }
     return this._getStreamSettings();
   }
 
