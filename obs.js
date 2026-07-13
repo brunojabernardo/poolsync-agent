@@ -29,8 +29,16 @@ const ACTIONS = new Set([
   // Layout detection + control (which camera sits in which quadrant)
   'getLayout', 'setLayout',
   // Lock cameras to fixed boxes (resolution-independent layout)
-  'lockCameraBoxes'
+  'lockCameraBoxes',
+  // Streaming destination (RTMP service + key)
+  'getStreamSettings', 'setStreamSettings'
 ]);
+
+// Known RTMPS ingest servers per platform (key is per-user).
+const RTMP_SERVERS = {
+  facebook: 'rtmps://live-api-s.facebook.com:443/rtmp/',
+  youtube: 'rtmp://a.rtmp.youtube.com/live2'
+};
 
 // Canvas quadrant → top-left corner factor.
 const QUADRANT_CORNER = {
@@ -405,6 +413,33 @@ class ObsManager extends EventEmitter {
     return { locked: results.length, items: results };
   }
 
+  // ── Streaming destination ──
+  // Never echoes the stream key back (only whether one is set).
+  async _getStreamSettings() {
+    const r = await this.obs.call('GetStreamServiceSettings');
+    const s = r.streamServiceSettings || {};
+    const server = String(s.server || '');
+    let platform = 'custom';
+    for (const [name, url] of Object.entries(RTMP_SERVERS)) {
+      if (server === url) { platform = name; break; }
+    }
+    return { type: r.streamServiceType || null, platform, server, keySet: !!s.key };
+  }
+
+  async _setStreamSettings(params) {
+    const platform = (params && params.platform) || 'custom';
+    const key = String((params && params.key) || '');
+    let server = String((params && params.server) || '');
+    if (platform !== 'custom') server = RTMP_SERVERS[platform] || server;
+    if (!server) throw new Error('servidor RTMP em falta');
+    if (!key) throw new Error('chave de stream em falta');
+    await this.obs.call('SetStreamServiceSettings', {
+      streamServiceType: 'rtmp_custom',
+      streamServiceSettings: { server, key, use_auth: false, bwtest: false }
+    });
+    return this._getStreamSettings();
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -433,6 +468,10 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._setLayout(params) };
         case 'lockCameraBoxes':
           return { ok: true, data: await this._lockCameraBoxes() };
+        case 'getStreamSettings':
+          return { ok: true, data: await this._getStreamSettings() };
+        case 'setStreamSettings':
+          return { ok: true, data: await this._setStreamSettings(params) };
 
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });
