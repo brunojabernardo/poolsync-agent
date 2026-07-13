@@ -1,0 +1,21 @@
+{
+  "name": "poolsync-agent",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "description": "PoolSync Agent — controla o OBS local em nome da app NICESTSB",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "status": "node index.js status",
+    "scenes": "node index.js scenes"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "obs-websocket-js": "^5.0.8",
+    "socket.io-client": "^4.8.3",
+    "ws": "^8.21.0"
+  }
+}
