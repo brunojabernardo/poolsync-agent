@@ -101,6 +101,17 @@ async function runOneShot(command, arg) {
     console.log('\nDefinições de stream ATUAIS no OBS (configura o Facebook Live à mão primeiro):');
     console.log('  streamServiceType:', r.streamServiceType);
     console.log('  streamServiceSettings:', JSON.stringify(masked, null, 2));
+  } else if (command === 'frame') {
+    const parts = (arg || '').trim().split(/\s+/);
+    const num = parts[0];
+    const zoom = Number(parts[1] || 0), panX = Number(parts[2] || 0), panY = Number(parts[3] || 0);
+    const inputs = await obs._getCameraInputs();
+    const byNum = {};
+    inputs.forEach((i) => { const mm = /mesa\s*(\d+)/i.exec(i.inputName); if (mm) byNum[mm[1]] = i.inputName; });
+    const inputName = byNum[num] || num;
+    logLine('info', `A aplicar enquadramento em "${inputName}": zoom=${zoom} panX=${panX} panY=${panY}`);
+    const res = await obs.execute('setCameraFraming', { inputName, zoom, panX, panY });
+    console.log(JSON.stringify(res, null, 2));
   } else if (command === 'lock-cameras') {
     const res = await obs.execute('lockCameraBoxes');
     if (!res.ok) { logLine('error', res.error); }
@@ -184,7 +195,7 @@ async function runAgent() {
 const [, , cmd, ...rest] = process.argv;
 banner();
 
-if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras', 'stream-info'].includes(cmd)) {
+if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras', 'stream-info', 'frame'].includes(cmd)) {
   runOneShot(cmd, rest.join(' ').trim()).catch((err) => {
     logLine('error', err.message);
     process.exit(1);
