@@ -34,11 +34,12 @@ const ACTIONS = new Set([
   'getStreamSettings', 'setStreamSettings'
 ]);
 
-// Named OBS services + their ingest server. Using the named service makes OBS
-// show e.g. "Facebook Live" and use OBS's maintained/current ingest URL.
+// Named OBS services + the EXACT ingest server OBS expects for each (read from
+// a real OBS "Facebook Live" setup via GetStreamServiceSettings). The server
+// must match OBS's service list or OBS discards the key.
 const PLATFORMS = {
-  facebook: { service: 'Facebook Live', server: 'rtmps://live-api-s.facebook.com:443/rtmp/' },
-  youtube: { service: 'YouTube - RTMPS', server: 'rtmps://a.rtmps.youtube.com:443/live2' }
+  facebook: { service: 'Facebook Live', server: 'rtmps://rtmp-api.facebook.com:443/rtmp/', protocol: 'RTMPS' },
+  youtube: { service: 'YouTube - RTMPS', server: 'rtmps://a.rtmps.youtube.com:443/live2', protocol: 'RTMPS' }
 };
 
 // Canvas quadrant → top-left corner factor.
@@ -445,12 +446,13 @@ class ObsManager extends EventEmitter {
 
     const p = PLATFORMS[platform];
     if (!p) throw new Error('plataforma desconhecida');
-    // Use a custom RTMPS server (OBS shows "Custom", but it IS the platform's
-    // ingest URL). This reliably stores the stream key, unlike the named
-    // rtmp_common service which OBS didn't persist the key for.
+    // Named service with the exact server OBS expects → OBS shows "Facebook
+    // Live" and the key populates the Stream Key field.
+    const settings = { service: p.service, server: p.server, key, bwtest: false };
+    if (p.protocol) settings.protocol = p.protocol;
     await this.obs.call('SetStreamServiceSettings', {
-      streamServiceType: 'rtmp_custom',
-      streamServiceSettings: { server: p.server, key, use_auth: false, bwtest: false }
+      streamServiceType: 'rtmp_common',
+      streamServiceSettings: settings
     });
     return this._getStreamSettings();
   }
