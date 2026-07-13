@@ -21,9 +21,17 @@ const ACTIONS = new Set([
   'startRecord', 'stopRecord', 'toggleRecord',
   // Camera identification
   'getCameras', 'setCameraDevice', 'getCameraThumbnails',
-  // Layout detection (which camera sits in which quadrant of a grid scene)
-  'getLayout'
+  // Layout detection + control (which camera sits in which quadrant)
+  'getLayout', 'setLayout'
 ]);
+
+// Canvas quadrant → top-left corner factor.
+const QUADRANT_CORNER = {
+  TOP_LEFT: { fx: 0, fy: 0 },
+  TOP_RIGHT: { fx: 0.5, fy: 0 },
+  BOTTOM_LEFT: { fx: 0, fy: 0.5 },
+  BOTTOM_RIGHT: { fx: 0.5, fy: 0.5 }
+};
 
 // Friendly label for a camera input, e.g. "Camera Mesa 1" → "Mesa 1".
 function cameraLabel(name) {
@@ -309,6 +317,46 @@ class ObsManager extends EventEmitter {
     return { scene, baseWidth: baseW, baseHeight: baseH, cameras };
   }
 
+  // Position each camera into its quadrant in a grid scene (2x2, equal tiles).
+  // assignments: [{ inputName, quadrant }]. Bounds keep aspect (SCALE_INNER);
+  // since cameras and quadrants are both 16:9 they fill exactly.
+  async _setLayout(params) {
+    const scene = (params && params.scene) || 'LIVE - All Tables';
+    const assignments = (params && Array.isArray(params.assignments)) ? params.assignments : [];
+    if (!assignments.length) throw new Error('sem disposição para aplicar');
+
+    const video = await this.obs.call('GetVideoSettings').catch(() => ({}));
+    const W = Number(video.baseWidth) || 1920;
+    const H = Number(video.baseHeight) || 1080;
+    const tileW = Math.round(W / 2);
+    const tileH = Math.round(H / 2);
+
+    const { sceneItems } = await this.obs.call('GetSceneItemList', { sceneName: scene });
+    const idByName = {};
+    (sceneItems || []).forEach((it) => { idByName[it.sourceName] = it.sceneItemId; });
+
+    for (const a of assignments) {
+      const id = idByName[a.inputName];
+      const corner = QUADRANT_CORNER[a.quadrant];
+      if (id == null || !corner) continue;
+      await this.obs.call('SetSceneItemTransform', {
+        sceneName: scene,
+        sceneItemId: id,
+        sceneItemTransform: {
+          positionX: Math.round(W * corner.fx),
+          positionY: Math.round(H * corner.fy),
+          alignment: 5, // top-left
+          boundsType: 'OBS_BOUNDS_SCALE_INNER',
+          boundsAlignment: 0, // centre inside the tile
+          boundsWidth: tileW,
+          boundsHeight: tileH,
+          cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0
+        }
+      });
+    }
+    return this._getLayout(scene); // confirm the new arrangement
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -333,6 +381,8 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._getCameraThumbnails(params && params.names) };
         case 'getLayout':
           return { ok: true, data: await this._getLayout(params && params.scene) };
+        case 'setLayout':
+          return { ok: true, data: await this._setLayout(params) };
 
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });

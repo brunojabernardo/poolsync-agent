@@ -8,6 +8,7 @@
 //   node index.js scene "LIVE - Table 1"   Switch program scene once, exit
 //   node index.js cameras    Connect, list camera inputs + available devices, exit
 //   node index.js layout ["Scene"]   Show which camera sits in which quadrant
+//   node index.js set-layout 3,4,1,2  Put mesas in corners [CIMA-ESQ,CIMA-DIR,BAIXO-ESQ,BAIXO-DIR]
 //
 // The one-shot commands let you verify OBS control WITHOUT the server configured.
 const config = require('./config');
@@ -92,6 +93,24 @@ async function runOneShot(command, arg) {
         console.log(`  ${(q[c.quadrant] || c.quadrant).padEnd(9)} → ${c.label}  [${c.inputName}]  (centro ${c.centerX},${c.centerY})`);
       }
     }
+  } else if (command === 'set-layout') {
+    const order = (arg || '1,2,3,4').split(',').map((x) => x.trim());
+    const quads = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'];
+    const inputs = await obs._getCameraInputs();
+    const byNum = {};
+    inputs.forEach((i) => { const mm = /mesa\s*(\d+)/i.exec(i.inputName); if (mm) byNum[mm[1]] = i.inputName; });
+    const assignments = order
+      .map((num, idx) => ({ inputName: byNum[num], quadrant: quads[idx] }))
+      .filter((a) => a.inputName && a.quadrant);
+    const res = await obs.execute('setLayout', { assignments });
+    if (!res.ok) { logLine('error', res.error); }
+    else {
+      logLine('info', 'Disposição aplicada.');
+      const q = { TOP_LEFT: 'CIMA-ESQ', TOP_RIGHT: 'CIMA-DIR', BOTTOM_LEFT: 'BAIXO-ESQ', BOTTOM_RIGHT: 'BAIXO-DIR' };
+      for (const c of res.data.cameras) {
+        console.log(`  ${(q[c.quadrant] || c.quadrant).padEnd(9)} → ${c.label}`);
+      }
+    }
   } else if (command === 'scene') {
     if (!arg) { logLine('error', 'Falta o nome da cena: node index.js scene "Nome"'); }
     else {
@@ -137,7 +156,7 @@ async function runAgent() {
 const [, , cmd, ...rest] = process.argv;
 banner();
 
-if (cmd === 'status' || cmd === 'scenes' || cmd === 'scene' || cmd === 'cameras' || cmd === 'layout') {
+if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout'].includes(cmd)) {
   runOneShot(cmd, rest.join(' ').trim()).catch((err) => {
     logLine('error', err.message);
     process.exit(1);
@@ -148,6 +167,6 @@ if (cmd === 'status' || cmd === 'scenes' || cmd === 'scene' || cmd === 'cameras'
     process.exit(1);
   });
 } else {
-  console.log(`Comando desconhecido: "${cmd}"\nUsa: node index.js [status|scenes|scene "Nome"|cameras|layout]`);
+  console.log(`Comando desconhecido: "${cmd}"\nUsa: node index.js [status|scenes|scene "Nome"|cameras|layout|set-layout 1,2,3,4]`);
   process.exit(1);
 }
