@@ -502,7 +502,10 @@ class ObsManager extends EventEmitter {
         if (t && t.sourceWidth) { w = t.sourceWidth; h = t.sourceHeight; break; }
       } catch (_) {}
     }
-    return { crop, nativeW: w + crop.left + crop.right, nativeH: h + crop.top + crop.bottom };
+    // sceneItem sourceWidth/Height stay at the camera's native resolution even
+    // with the crop filter applied, so use them directly (adding the crop back
+    // would inflate the size and make zoom read/apply wrong).
+    return { crop, nativeW: w, nativeH: h };
   }
 
   async _getCameraFraming(inputName) {
