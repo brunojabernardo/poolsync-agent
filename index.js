@@ -14,6 +14,7 @@
 const config = require('./config');
 const { ObsManager } = require('./obs');
 const { ServerLink } = require('./server-link');
+const { startLocalPreview } = require('./local-preview');
 
 function stamp() {
   return new Date().toLocaleTimeString('pt-PT');
@@ -181,9 +182,14 @@ async function runAgent() {
     logLine('warn', 'SERVER_URL/DEVICE_KEY não definidos — a correr só com OBS (sem controlo remoto). Preenche o .env para ligar à app.');
   }
 
+  // Smooth local preview (browser on this machine connects over localhost).
+  let localPreview = null;
+  try { localPreview = startLocalPreview(config, obs, logLine); } catch (err) { logLine('warn', `Prévia local não arrancou: ${err.message}`); }
+
   const shutdown = async () => {
     logLine('info', 'A encerrar...');
     if (link) link.stop();
+    if (localPreview) localPreview.close();
     await obs.disconnect();
     process.exit(0);
   };

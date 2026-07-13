@@ -54,6 +54,10 @@ const config = {
     user: String(val('USER_HANDLE', '')).trim()
   },
 
+  // Local high-fps preview server (browser on the same machine connects to
+  // ws://localhost:<port>, bypassing the cloud).
+  localPreviewPort: Number(val('LOCAL_PREVIEW_PORT', 4456)),
+
   // Reconnect tuning (milliseconds).
   reconnect: {
     obsBaseDelay: Number(val('OBS_RECONNECT_MS', 3000)),
