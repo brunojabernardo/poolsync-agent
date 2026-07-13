@@ -18,8 +18,16 @@ const ACTIONS = new Set([
   'triggerTransition',
   'setStudioMode',
   'startStream', 'stopStream', 'toggleStream',
-  'startRecord', 'stopRecord', 'toggleRecord'
+  'startRecord', 'stopRecord', 'toggleRecord',
+  // Camera identification
+  'getCameras', 'setCameraDevice', 'getCameraThumbnails'
 ]);
+
+// Friendly label for a camera input, e.g. "Camera Mesa 1" → "Mesa 1".
+function cameraLabel(name) {
+  const m = /mesa\s*(\d+)/i.exec(String(name || ''));
+  return m ? `Mesa ${m[1]}` : String(name || '');
+}
 
 class ObsManager extends EventEmitter {
   constructor(config) {
@@ -187,6 +195,71 @@ class ObsManager extends EventEmitter {
       .filter(Boolean);
   }
 
+  // ── Camera identification ──
+  // The scene collection ships 4 fixed capture sources ("Camera Mesa 1..4").
+  // Identifying a camera = pointing one of these sources at the right physical
+  // device. We expose the device options + live thumbnails so the app can do
+  // this visually.
+  async _getCameraInputs() {
+    const { inputs } = await this.obs.call('GetInputList');
+    return (inputs || []).filter((i) => i.inputKind === 'dshow_input');
+  }
+
+  async _getCameras() {
+    const cams = await this._getCameraInputs();
+    const out = [];
+    for (const cam of cams) {
+      const name = cam.inputName;
+      let devices = [];
+      let currentDeviceId = null;
+      try {
+        const items = await this.obs.call('GetInputPropertiesListPropertyItems', {
+          inputName: name, propertyName: 'video_device_id'
+        });
+        devices = (items.propertyItems || [])
+          .filter((p) => p.itemEnabled !== false && p.itemValue)
+          .map((p) => ({ name: p.itemName, value: String(p.itemValue) }));
+      } catch (_) {}
+      try {
+        const s = await this.obs.call('GetInputSettings', { inputName: name });
+        const v = s.inputSettings && (s.inputSettings.video_device_id || s.inputSettings.last_video_device_id);
+        currentDeviceId = v ? String(v) : null;
+      } catch (_) {}
+      out.push({ inputName: name, label: cameraLabel(name), devices, currentDeviceId });
+    }
+    out.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+    return { cameras: out };
+  }
+
+  async _setCameraDevice(params) {
+    const inputName = params && params.inputName;
+    const deviceId = params && params.deviceId;
+    if (!inputName || !deviceId) throw new Error('inputName/deviceId em falta');
+    await this.obs.call('SetInputSettings', {
+      inputName,
+      inputSettings: { video_device_id: deviceId, last_video_device_id: deviceId },
+      overlay: true
+    });
+  }
+
+  async _getCameraThumbnails(names) {
+    const list = Array.isArray(names) && names.length
+      ? names
+      : (await this._getCameraInputs()).map((c) => c.inputName);
+    const thumbnails = {};
+    for (const name of list) {
+      try {
+        const shot = await this.obs.call('GetSourceScreenshot', {
+          sourceName: name, imageFormat: 'jpg', imageWidth: 320
+        });
+        thumbnails[name] = shot.imageData || null; // full data: URL
+      } catch (_) {
+        thumbnails[name] = null;
+      }
+    }
+    return { thumbnails };
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -201,6 +274,15 @@ class ObsManager extends EventEmitter {
 
     try {
       switch (action) {
+        // Data-returning actions bypass the snapshot return below.
+        case 'getCameras':
+          return { ok: true, data: await this._getCameras() };
+        case 'setCameraDevice':
+          await this._setCameraDevice(params);
+          return { ok: true, data: await this._getCameras() };
+        case 'getCameraThumbnails':
+          return { ok: true, data: await this._getCameraThumbnails(params && params.names) };
+
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });
           break;

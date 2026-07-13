@@ -6,6 +6,7 @@
 //   node index.js status     Connect, print the full OBS state, exit
 //   node index.js scenes     Connect, list scenes, exit
 //   node index.js scene "LIVE - Table 1"   Switch program scene once, exit
+//   node index.js cameras    Connect, list camera inputs + available devices, exit
 //
 // The one-shot commands let you verify OBS control WITHOUT the server configured.
 const config = require('./config');
@@ -63,6 +64,20 @@ async function runOneShot(command, arg) {
     for (const name of s.scenes) {
       console.log(`  ${name === s.currentProgramScene ? '▶' : ' '} ${name}`);
     }
+  } else if (command === 'cameras') {
+    const res = await obs.execute('getCameras');
+    if (!res.ok) { logLine('error', res.error); }
+    else {
+      const cams = res.data.cameras || [];
+      console.log(`\nCâmaras (${cams.length}):`);
+      for (const cam of cams) {
+        console.log(`\n  ${cam.label} [${cam.inputName}]`);
+        console.log(`    atual: ${cam.currentDeviceId || '(nenhuma)'}`);
+        (cam.devices || []).forEach((d) => {
+          console.log(`      ${d.value === cam.currentDeviceId ? '▶' : '·'} ${d.name}`);
+        });
+      }
+    }
   } else if (command === 'scene') {
     if (!arg) { logLine('error', 'Falta o nome da cena: node index.js scene "Nome"'); }
     else {
@@ -108,7 +123,7 @@ async function runAgent() {
 const [, , cmd, ...rest] = process.argv;
 banner();
 
-if (cmd === 'status' || cmd === 'scenes' || cmd === 'scene') {
+if (cmd === 'status' || cmd === 'scenes' || cmd === 'scene' || cmd === 'cameras') {
   runOneShot(cmd, rest.join(' ').trim()).catch((err) => {
     logLine('error', err.message);
     process.exit(1);
@@ -119,6 +134,6 @@ if (cmd === 'status' || cmd === 'scenes' || cmd === 'scene') {
     process.exit(1);
   });
 } else {
-  console.log(`Comando desconhecido: "${cmd}"\nUsa: node index.js [status|scenes|scene "Nome"]`);
+  console.log(`Comando desconhecido: "${cmd}"\nUsa: node index.js [status|scenes|scene "Nome"|cameras]`);
   process.exit(1);
 }
