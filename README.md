@@ -47,4 +47,38 @@ npm start        # ou: node index.js
 - Com ambos preenchidos → liga-se ao servidor e aparece no painel do admin.
 
 O agente reconecta automaticamente ao OBS e ao servidor se a ligação cair.
-`Ctrl+C` encerra em limpo.
+`Ctrl+C` encerra em limpo. Ao ligar ao OBS, fixa automaticamente as câmaras nas
+caixas certas (layout imune à resolução).
+
+## Configuração via ficheiro (para o `.exe`)
+
+Além do `.env`, o agente lê um `poolsync.config.json` **na mesma pasta do
+executável**, com prioridade sobre o `.env`. É este o ficheiro que o site gera
+pré-preenchido para o cliente:
+
+```json
+{
+  "SERVER_URL": "https://<a-tua-app>.up.railway.app",
+  "DEVICE_KEY": "<a-chave-do-cliente>",
+  "USER_HANDLE": "owner"
+}
+```
+
+## Build do executável (distribuição)
+
+Gera um `.exe` Windows autónomo (sem Node instalado no cliente):
+
+```bash
+npm install          # inclui a devDependency @yao-pkg/pkg
+npm run build        # → dist/PoolSyncAgent.exe (~60 MB)
+```
+
+O `camera-boxes.json` vai embutido no `.exe`. Publica o `dist/PoolSyncAgent.exe`
+como asset de um **GitHub Release** com esse nome exato — o site aponta para
+`releases/latest/download/PoolSyncAgent.exe`.
+
+### Fluxo do cliente (sem Node/terminal)
+
+1. Descarrega o `PoolSyncAgent.exe` e o `poolsync.config.json` (do site).
+2. Põe os dois na mesma pasta.
+3. Duplo-clique no `.exe`. Liga ao OBS local e ao servidor.

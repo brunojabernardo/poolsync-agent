@@ -4,10 +4,17 @@
   "type": "commonjs",
   "description": "PoolSync Agent — controla o OBS local em nome da app NICESTSB",
   "main": "index.js",
+  "bin": "index.js",
   "scripts": {
     "start": "node index.js",
     "status": "node index.js status",
-    "scenes": "node index.js scenes"
+    "scenes": "node index.js scenes",
+    "build": "pkg . --targets node22-win-x64 --output dist/PoolSyncAgent.exe"
+  },
+  "pkg": {
+    "assets": [
+      "camera-boxes.json"
+    ]
   },
   "keywords": [],
   "author": "",
@@ -17,5 +24,8 @@
     "obs-websocket-js": "^5.0.8",
     "socket.io-client": "^4.8.3",
     "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.21.0"
   }
 }
