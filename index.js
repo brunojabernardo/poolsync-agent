@@ -137,8 +137,19 @@ async function runOneShot(command, arg) {
 async function runAgent() {
   const obs = new ObsManager(config);
   obs.on('log', logLine);
+
+  // Lock cameras to their fixed boxes once, as soon as OBS is connected, so the
+  // layout is resolution-independent without the operator doing anything. Only
+  // in the long-running agent (not in one-shot CLI commands).
+  let didAutoLock = false;
   obs.on('state', (s) => {
     logLine('debug', `estado: cena="${s.currentProgramScene}" stream=${s.streaming} rec=${s.recording} cenas=${s.scenes.length}`);
+    if (s.obsConnected && !didAutoLock) {
+      didAutoLock = true;
+      obs.execute('lockCameraBoxes')
+        .then((r) => { if (r && r.ok) logLine('info', `Câmaras fixadas (${r.data.locked} posições) — layout imune à resolução.`); })
+        .catch(() => {});
+    }
   });
 
   await obs.connect();
