@@ -31,7 +31,9 @@ const ACTIONS = new Set([
   // Lock cameras to fixed boxes (resolution-independent layout)
   'lockCameraBoxes',
   // Streaming destination (RTMP service + key)
-  'getStreamSettings', 'setStreamSettings'
+  'getStreamSettings', 'setStreamSettings',
+  // Live program preview (screenshot of what's on air)
+  'getProgramPreview'
 ]);
 
 // Named OBS services + the EXACT ingest server OBS expects for each (read from
@@ -457,6 +459,21 @@ class ObsManager extends EventEmitter {
     return this._getStreamSettings();
   }
 
+  // Screenshot of the current program scene (the composited output on air),
+  // for a live monitoring preview in the admin.
+  async _getProgramPreview() {
+    const scene = this.state.currentProgramScene;
+    if (!scene) return { image: null, scene: null };
+    try {
+      const shot = await this.obs.call('GetSourceScreenshot', {
+        sourceName: scene, imageFormat: 'jpg', imageWidth: 640
+      });
+      return { image: shot.imageData || null, scene };
+    } catch (_) {
+      return { image: null, scene };
+    }
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -489,6 +506,8 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._getStreamSettings() };
         case 'setStreamSettings':
           return { ok: true, data: await this._setStreamSettings(params) };
+        case 'getProgramPreview':
+          return { ok: true, data: await this._getProgramPreview() };
 
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });
