@@ -445,20 +445,13 @@ class ObsManager extends EventEmitter {
 
     const p = PLATFORMS[platform];
     if (!p) throw new Error('plataforma desconhecida');
-    // Prefer OBS's named service (shows "Facebook Live"/"YouTube" and uses OBS's
-    // current ingest URL); fall back to a custom RTMPS server if this OBS build
-    // doesn't have that named service.
-    try {
-      await this.obs.call('SetStreamServiceSettings', {
-        streamServiceType: 'rtmp_common',
-        streamServiceSettings: { service: p.service, server: p.server, key }
-      });
-    } catch (_) {
-      await this.obs.call('SetStreamServiceSettings', {
-        streamServiceType: 'rtmp_custom',
-        streamServiceSettings: { server: p.server, key, use_auth: false, bwtest: false }
-      });
-    }
+    // Use a custom RTMPS server (OBS shows "Custom", but it IS the platform's
+    // ingest URL). This reliably stores the stream key, unlike the named
+    // rtmp_common service which OBS didn't persist the key for.
+    await this.obs.call('SetStreamServiceSettings', {
+      streamServiceType: 'rtmp_custom',
+      streamServiceSettings: { server: p.server, key, use_auth: false, bwtest: false }
+    });
     return this._getStreamSettings();
   }
 
