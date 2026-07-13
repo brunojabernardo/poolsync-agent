@@ -93,6 +93,14 @@ async function runOneShot(command, arg) {
         console.log(`  ${(q[c.quadrant] || c.quadrant).padEnd(9)} → ${c.label}  [${c.inputName}]  (centro ${c.centerX},${c.centerY})`);
       }
     }
+  } else if (command === 'stream-info') {
+    const r = await obs.obs.call('GetStreamServiceSettings');
+    const s = r.streamServiceSettings || {};
+    const masked = { ...s };
+    if (masked.key) masked.key = `(${String(masked.key).length} chars — oculta)`;
+    console.log('\nDefinições de stream ATUAIS no OBS (configura o Facebook Live à mão primeiro):');
+    console.log('  streamServiceType:', r.streamServiceType);
+    console.log('  streamServiceSettings:', JSON.stringify(masked, null, 2));
   } else if (command === 'lock-cameras') {
     const res = await obs.execute('lockCameraBoxes');
     if (!res.ok) { logLine('error', res.error); }
@@ -176,7 +184,7 @@ async function runAgent() {
 const [, , cmd, ...rest] = process.argv;
 banner();
 
-if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras'].includes(cmd)) {
+if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras', 'stream-info'].includes(cmd)) {
   runOneShot(cmd, rest.join(' ').trim()).catch((err) => {
     logLine('error', err.message);
     process.exit(1);
