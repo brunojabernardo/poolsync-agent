@@ -27,28 +27,67 @@ function startLocalPreview(config, obs, log) {
   // Reject disallowed origins during the handshake (before the socket opens).
   const wss = new WebSocketServer({ server, path: '/preview', verifyClient: (info) => originOk(info.origin) });
 
-  let clients = 0;
   let looping = false;
 
+  // Each client subscribes to a set of sources: '__program__' for the on-air
+  // preview, plus camera input names while the setup panel is open.
   wss.on('connection', (ws) => {
-    clients++;
+    ws._sources = ['__program__'];
+    ws.on('message', (raw) => {
+      try {
+        const m = JSON.parse(String(raw));
+        if (m && m.type === 'subscribe' && Array.isArray(m.sources)) {
+          ws._sources = m.sources.filter((s) => typeof s === 'string').slice(0, 12);
+        }
+      } catch (_) {}
+    });
     if (!looping) loop();
-    ws.on('close', () => { clients = Math.max(0, clients - 1); });
     ws.on('error', () => {});
   });
 
+  function activeClients() {
+    let n = 0;
+    wss.clients.forEach((c) => { if (c.readyState === 1) n++; });
+    return n;
+  }
+  function unionSources() {
+    const set = new Set();
+    wss.clients.forEach((c) => { if (c.readyState === 1 && Array.isArray(c._sources)) c._sources.forEach((s) => set.add(s)); });
+    if (set.size === 0) set.add('__program__');
+    return [...set];
+  }
+  function broadcast(source, image) {
+    const data = JSON.stringify({ source, image });
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1 && (!Array.isArray(c._sources) || c._sources.includes(source))) {
+        try { c.send(data); } catch (_) {}
+      }
+    });
+  }
+
   async function loop() {
     looping = true;
-    while (clients > 0) {
-      let frame = null;
+    let idx = 0;
+    // Round-robin over the subscribed sources so none starves (throughput is
+    // shared: 1 source ≈ full rate; 5 sources ≈ a fifth each).
+    while (activeClients() > 0) {
+      const sources = unionSources();
+      const source = sources[idx % sources.length];
+      idx++;
+      let image = null;
       try {
-        const res = await obs.execute('getProgramPreview');
-        if (res && res.ok && res.data) frame = res.data.image;
+        if (source === '__program__') {
+          const res = await obs.execute('getProgramPreview');
+          if (res && res.ok && res.data) image = res.data.image;
+        } else if (obs.connected) {
+          const shot = await obs.obs.call('GetSourceScreenshot', {
+            sourceName: source, imageFormat: 'jpg', imageWidth: 640, imageCompressionQuality: 70
+          });
+          image = shot.imageData || null;
+        }
       } catch (_) {}
-      if (frame) {
-        wss.clients.forEach((c) => { if (c.readyState === 1) { try { c.send(frame); } catch (_) {} } });
-      }
-      await new Promise((r) => setTimeout(r, 70)); // ~14fps ceiling
+      if (image) broadcast(source, image);
+      await new Promise((r) => setTimeout(r, 40));
     }
     looping = false;
   }
