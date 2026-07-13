@@ -7,6 +7,11 @@
 //   - 'log'    (level,msg) → human-readable progress for the console
 const EventEmitter = require('events');
 const OBSWebSocket = require('obs-websocket-js').default;
+// Target display box (px) per scene → camera, derived from the shipped scene
+// collection. Locking cameras to these boxes with bounds makes the layout
+// resolution-independent (any camera fills its box, no deformation).
+let CAMERA_BOXES = {};
+try { CAMERA_BOXES = require('./camera-boxes.json'); } catch (_) { CAMERA_BOXES = {}; }
 
 // The set of high-level actions the app is allowed to trigger. Each maps to one
 // or more OBS requests. Scene names are validated by OBS itself (a bad name
@@ -22,7 +27,9 @@ const ACTIONS = new Set([
   // Camera identification
   'getCameras', 'setCameraDevice', 'getCameraThumbnails',
   // Layout detection + control (which camera sits in which quadrant)
-  'getLayout', 'setLayout'
+  'getLayout', 'setLayout',
+  // Lock cameras to fixed boxes (resolution-independent layout)
+  'lockCameraBoxes'
 ]);
 
 // Canvas quadrant → top-left corner factor.
@@ -357,6 +364,47 @@ class ObsManager extends EventEmitter {
     return this._getLayout(scene); // confirm the new arrangement
   }
 
+  // Lock every camera to its designed box using bounds, so any camera fills its
+  // box regardless of native resolution (no more deformation). Boxes come from
+  // CAMERA_BOXES (derived from the scene collection). Idempotent-ish: re-running
+  // just re-applies the same bounds.
+  async _lockCameraBoxes() {
+    const results = [];
+    for (const [sceneName, cams] of Object.entries(CAMERA_BOXES)) {
+      let items = [];
+      try {
+        items = (await this.obs.call('GetSceneItemList', { sceneName })).sceneItems || [];
+      } catch (_) {
+        continue; // scene may not exist in this collection
+      }
+      const itemByName = {};
+      items.forEach((it) => { itemByName[it.sourceName] = it; });
+
+      for (const [cam, box] of Object.entries(cams)) {
+        const it = itemByName[cam];
+        if (!it) continue;
+        const t = it.sceneItemTransform || {};
+        try {
+          await this.obs.call('SetSceneItemTransform', {
+            sceneName,
+            sceneItemId: it.sceneItemId,
+            sceneItemTransform: {
+              positionX: t.positionX,
+              positionY: t.positionY,
+              alignment: t.alignment,
+              boundsType: 'OBS_BOUNDS_SCALE_INNER',
+              boundsAlignment: 0,
+              boundsWidth: box[0],
+              boundsHeight: box[1]
+            }
+          });
+          results.push({ scene: sceneName, camera: cameraLabel(cam), box: `${box[0]}x${box[1]}` });
+        } catch (_) {}
+      }
+    }
+    return { locked: results.length, items: results };
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -383,6 +431,8 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._getLayout(params && params.scene) };
         case 'setLayout':
           return { ok: true, data: await this._setLayout(params) };
+        case 'lockCameraBoxes':
+          return { ok: true, data: await this._lockCameraBoxes() };
 
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });

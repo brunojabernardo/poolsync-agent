@@ -1,0 +1,346 @@
+{
+  "Cams Identifier": {
+    "Camera Mesa 4": [
+      923,
+      519
+    ],
+    "Camera Mesa 3": [
+      918,
+      516
+    ],
+    "Camera Mesa 2": [
+      938,
+      528
+    ],
+    "Camera Mesa 1": [
+      934,
+      525
+    ]
+  },
+  "LIVE - All Tables": {
+    "Camera Mesa 4": [
+      960,
+      540
+    ],
+    "Camera Mesa 3": [
+      960,
+      540
+    ],
+    "Camera Mesa 2": [
+      960,
+      540
+    ],
+    "Camera Mesa 1": [
+      960,
+      540
+    ]
+  },
+  "LIVE - Games 1 & 2": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Games 1 & 3": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Games 1 & 4": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Games 2 & 1": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      950,
+      535
+    ],
+    "Camera Mesa 1": [
+      944,
+      531
+    ]
+  },
+  "LIVE - Games 2 & 3": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Games 2 & 4": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Games 3 & 1": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      943,
+      530
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      936,
+      526
+    ]
+  },
+  "LIVE - Games 3 & 2": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      941,
+      529
+    ],
+    "Camera Mesa 2": [
+      936,
+      527
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Games 3 & 4": {
+    "Camera Mesa 4": [
+      941,
+      529
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Games 4 & 1": {
+    "Camera Mesa 4": [
+      950,
+      534
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      936,
+      526
+    ]
+  },
+  "LIVE - Games 4 & 2": {
+    "Camera Mesa 4": [
+      947,
+      532
+    ],
+    "Camera Mesa 3": [
+      937,
+      527
+    ],
+    "Camera Mesa 2": [
+      943,
+      531
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Games 4 & 3": {
+    "Camera Mesa 4": [
+      934,
+      525
+    ],
+    "Camera Mesa 3": [
+      944,
+      531
+    ],
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Table 1": {
+    "Camera Mesa 4": [
+      1172,
+      659
+    ],
+    "Camera Mesa 3": [
+      1168,
+      657
+    ],
+    "Camera Mesa 2": [
+      1181,
+      664
+    ],
+    "Camera Mesa 1": [
+      1169,
+      657
+    ]
+  },
+  "LIVE - Table 2": {
+    "Camera Mesa 4": [
+      1172,
+      659
+    ],
+    "Camera Mesa 3": [
+      1168,
+      657
+    ],
+    "Camera Mesa 2": [
+      1181,
+      664
+    ],
+    "Camera Mesa 1": [
+      1169,
+      657
+    ]
+  },
+  "LIVE - Table 3": {
+    "Camera Mesa 4": [
+      1172,
+      659
+    ],
+    "Camera Mesa 3": [
+      1168,
+      657
+    ],
+    "Camera Mesa 2": [
+      1181,
+      664
+    ],
+    "Camera Mesa 1": [
+      1169,
+      657
+    ]
+  },
+  "LIVE - Table 4": {
+    "Camera Mesa 4": [
+      1172,
+      659
+    ],
+    "Camera Mesa 3": [
+      1168,
+      657
+    ],
+    "Camera Mesa 2": [
+      1181,
+      664
+    ],
+    "Camera Mesa 1": [
+      1169,
+      657
+    ]
+  },
+  "LIVE - Two Tables": {
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  },
+  "LIVE - Two Tables Reverse": {
+    "Camera Mesa 2": [
+      948,
+      534
+    ],
+    "Camera Mesa 1": [
+      946,
+      532
+    ]
+  }
+}

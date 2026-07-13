@@ -93,6 +93,15 @@ async function runOneShot(command, arg) {
         console.log(`  ${(q[c.quadrant] || c.quadrant).padEnd(9)} → ${c.label}  [${c.inputName}]  (centro ${c.centerX},${c.centerY})`);
       }
     }
+  } else if (command === 'lock-cameras') {
+    const res = await obs.execute('lockCameraBoxes');
+    if (!res.ok) { logLine('error', res.error); }
+    else {
+      logLine('info', `Câmaras fixadas em ${res.data.locked} posições (bounds).`);
+      const byScene = {};
+      res.data.items.forEach((i) => { (byScene[i.scene] = byScene[i.scene] || []).push(`${i.camera}=${i.box}`); });
+      for (const [scn, list] of Object.entries(byScene)) console.log(`  ${scn}: ${list.join(', ')}`);
+    }
   } else if (command === 'set-layout') {
     const order = (arg || '1,2,3,4').split(',').map((x) => x.trim());
     const quads = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'];
@@ -156,7 +165,7 @@ async function runAgent() {
 const [, , cmd, ...rest] = process.argv;
 banner();
 
-if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout'].includes(cmd)) {
+if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras'].includes(cmd)) {
   runOneShot(cmd, rest.join(' ').trim()).catch((err) => {
     logLine('error', err.message);
     process.exit(1);
