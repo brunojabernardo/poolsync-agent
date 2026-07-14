@@ -113,6 +113,20 @@ async function runOneShot(command, arg) {
     logLine('info', `A aplicar enquadramento em "${inputName}": zoom=${zoom} panX=${panX} panY=${panY}`);
     const res = await obs.execute('setCameraFraming', { inputName, zoom, panX, panY });
     console.log(JSON.stringify(res, null, 2));
+  } else if (command === 'preview') {
+    const scene = obs.state.currentProgramScene;
+    logLine('info', `currentProgramScene: ${JSON.stringify(scene)}`);
+    if (!scene) { logLine('warn', 'Sem cena de programa definida — nada para capturar.'); }
+    else {
+      try {
+        const shot = await obs.obs.call('GetSourceScreenshot', {
+          sourceName: scene, imageFormat: 'jpg', imageWidth: 960, imageCompressionQuality: 75
+        });
+        logLine('info', `screenshot OK — ${shot.imageData ? (shot.imageData.length + ' chars') : 'SEM imageData'}`);
+      } catch (err) {
+        logLine('error', `GetSourceScreenshot falhou: ${err && err.message ? err.message : err}`);
+      }
+    }
   } else if (command === 'lock-cameras') {
     const res = await obs.execute('lockCameraBoxes');
     if (!res.ok) { logLine('error', res.error); }
@@ -201,7 +215,7 @@ async function runAgent() {
 const [, , cmd, ...rest] = process.argv;
 banner();
 
-if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras', 'stream-info', 'frame'].includes(cmd)) {
+if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras', 'stream-info', 'frame', 'preview'].includes(cmd)) {
   runOneShot(cmd, rest.join(' ').trim()).catch((err) => {
     logLine('error', err.message);
     process.exit(1);
