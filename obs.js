@@ -7,6 +7,45 @@
 //   - 'log'    (level,msg) → human-readable progress for the console
 const EventEmitter = require('events');
 const OBSWebSocket = require('obs-websocket-js').default;
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFile } = require('child_process');
+
+// Native UVC camera control (Pan/Tilt/Zoom/Focus) is NOT reachable through OBS —
+// it lives behind the driver's "Configure Video -> Camera Control" page. We drive
+// it directly at the Windows level with a tiny bundled DirectShow helper
+// (IAMCameraControl). Because the camera moves internally, the output frame
+// geometry is unchanged, so overlay masks stay aligned (unlike a digital crop).
+// The helper is extracted from the packaged binary to a temp path once.
+let _camCtlExe = null;
+function ensureCamCtlExe() {
+  if (_camCtlExe && fs.existsSync(_camCtlExe)) return _camCtlExe;
+  const bundled = path.join(__dirname, 'native', 'CamCtl.exe');
+  if (process.pkg) {
+    const tmp = path.join(os.tmpdir(), 'poolsync-camctl.exe');
+    try {
+      if (!fs.existsSync(tmp) || fs.statSync(tmp).size !== fs.statSync(bundled).size) {
+        fs.writeFileSync(tmp, fs.readFileSync(bundled));
+      }
+      _camCtlExe = tmp;
+    } catch (e) { throw new Error('CamCtl.exe indisponível: ' + e.message); }
+  } else {
+    _camCtlExe = bundled;
+  }
+  return _camCtlExe;
+}
+function runCamCtl(args) {
+  return new Promise((resolve, reject) => {
+    let exe;
+    try { exe = ensureCamCtlExe(); } catch (e) { return reject(e); }
+    execFile(exe, args, { timeout: 8000, windowsHide: true }, (err, stdout, stderr) => {
+      const out = String(stdout || '').trim();
+      if (err) return reject(new Error(String(stderr || out || err.message).trim()));
+      resolve(out);
+    });
+  });
+}
 // Target display box (px) per scene → camera, derived from the shipped scene
 // collection. Locking cameras to these boxes with bounds makes the layout
 // resolution-independent (any camera fills its box, no deformation).
@@ -35,7 +74,9 @@ const ACTIONS = new Set([
   // Live program preview (screenshot of what's on air)
   'getProgramPreview',
   // Per-camera framing (zoom + pan) via a crop filter on the input
-  'setCameraFraming'
+  'setCameraFraming',
+  // Native UVC camera control (Pan/Tilt/Zoom/Focus) via DirectShow helper
+  'getCameraControls', 'setCameraControl'
 ]);
 
 // Named OBS services + the EXACT ingest server OBS expects for each (read from
@@ -545,6 +586,41 @@ class ObsManager extends EventEmitter {
     return { inputName, framing: await this._getCameraFraming(inputName) };
   }
 
+  // ── Native UVC camera control (Pan/Tilt/Zoom/Focus) via the DirectShow helper ──
+  // Resolve the OBS input's device to a friendly name, then read/drive the real
+  // camera controls. The mask is unaffected (the camera moves internally).
+  async _cameraDeviceName(inputName) {
+    const s = await this.obs.call('GetInputSettings', { inputName });
+    const vid = (s.inputSettings && (s.inputSettings.video_device_id || s.inputSettings.last_video_device_id)) || '';
+    // OBS stores "<FriendlyName>:<device path>"; the name is the unique-enough match.
+    const name = String(vid).split(':')[0].trim();
+    if (!name) throw new Error('câmara sem dispositivo atribuído');
+    return name;
+  }
+
+  async _getCameraControls(inputName) {
+    if (!inputName) throw new Error('inputName em falta');
+    const device = await this._cameraDeviceName(inputName);
+    const out = await runCamCtl(['get', device]);
+    let parsed = {};
+    try { parsed = JSON.parse(out); } catch (_) { throw new Error('resposta inválida do helper: ' + out); }
+    return { inputName, device, controls: (parsed && parsed.controls) || {} };
+  }
+
+  async _setCameraControl(params) {
+    const inputName = params && params.inputName;
+    const prop = params && String(params.prop || '').toLowerCase();
+    if (!inputName) throw new Error('inputName em falta');
+    if (!['pan', 'tilt', 'zoom', 'focus'].includes(prop)) throw new Error('prop inválida: ' + prop);
+    const device = await this._cameraDeviceName(inputName);
+    const auto = !!(params && params.auto);
+    const arg = auto ? 'auto' : String(Math.round(Number(params && params.value) || 0));
+    const out = await runCamCtl(['set', device, prop, arg]);
+    let parsed = {};
+    try { parsed = JSON.parse(out); } catch (_) {}
+    return { inputName, device, prop, result: parsed };
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -581,6 +657,10 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._getProgramPreview() };
         case 'setCameraFraming':
           return { ok: true, data: await this._setCameraFraming(params) };
+        case 'getCameraControls':
+          return { ok: true, data: await this._getCameraControls(params && params.inputName) };
+        case 'setCameraControl':
+          return { ok: true, data: await this._setCameraControl(params) };
 
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });

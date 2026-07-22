@@ -9,11 +9,13 @@
     "start": "node index.js",
     "status": "node index.js status",
     "scenes": "node index.js scenes",
+    "build:native": "csc /nologo /target:exe /platform:x64 /out:native\\CamCtl.exe native\\CamCtl.cs",
     "build": "pkg . --targets node22-win-x64 --output dist/PoolSyncAgent.exe"
   },
   "pkg": {
     "assets": [
-      "camera-boxes.json"
+      "camera-boxes.json",
+      "native/CamCtl.exe"
     ]
   },
   "keywords": [],
