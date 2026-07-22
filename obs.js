@@ -592,8 +592,14 @@ class ObsManager extends EventEmitter {
   async _cameraDeviceName(inputName) {
     const s = await this.obs.call('GetInputSettings', { inputName });
     const vid = (s.inputSettings && (s.inputSettings.video_device_id || s.inputSettings.last_video_device_id)) || '';
-    // OBS stores "<FriendlyName>:<device path>"; the name is the unique-enough match.
-    const name = String(vid).split(':')[0].trim();
+    const id = String(vid);
+    // Prefer the unique USB instance serial (e.g. "354e9445") so identical camera
+    // models don't all resolve to the first one. The helper matches it against the
+    // device path. Fall back to the friendly name (before ':') when there's no
+    // serial (e.g. virtual cameras, which have no camera control anyway).
+    const m = /&([0-9a-f]{5,})&\d+&\d+/i.exec(id);
+    if (m) return m[1];
+    const name = id.split(':')[0].trim();
     if (!name) throw new Error('câmara sem dispositivo atribuído');
     return name;
   }

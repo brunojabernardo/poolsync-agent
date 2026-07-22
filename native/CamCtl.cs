@@ -110,23 +110,27 @@ class CamCtl
         IMoniker[] mons = new IMoniker[1];
         while (en.Next(1, mons, IntPtr.Zero) == 0)
         {
-            string name = ReadName(mons[0]);
-            Console.WriteLine(name);
+            string name = ReadProp(mons[0], "FriendlyName");
+            string path = ReadProp(mons[0], "DevicePath");
+            Console.WriteLine(name + "\t" + path);
             Marshal.ReleaseComObject(mons[0]);
         }
     }
 
-    static string ReadName(IMoniker m)
+    static string ReadProp(IMoniker m, string prop)
     {
         try
         {
             object bo; Guid bg = IID_IPropertyBag; m.BindToStorage(null, null, ref bg, out bo);
-            object nv; ((IPropertyBag)bo).Read("FriendlyName", out nv, IntPtr.Zero);
-            return nv as string ?? "?";
+            object nv; ((IPropertyBag)bo).Read(prop, out nv, IntPtr.Zero);
+            return nv as string ?? "";
         }
-        catch { return "?"; }
+        catch { return ""; }
     }
 
+    // Match is compared against FriendlyName AND DevicePath (substring, case-insensitive).
+    // For identical camera models, pass the unique device-path token (e.g. USB serial)
+    // so each physical camera resolves to itself instead of always the first one.
     static IAMCameraControl FindCamera(string match)
     {
         Type t = Type.GetTypeFromCLSID(CLSID_SystemDeviceEnum);
@@ -138,8 +142,11 @@ class CamCtl
         while (en.Next(1, mons, IntPtr.Zero) == 0)
         {
             IMoniker m = mons[0];
-            string name = ReadName(m);
-            if (name.IndexOf(match, StringComparison.OrdinalIgnoreCase) < 0) { Marshal.ReleaseComObject(m); continue; }
+            string name = ReadProp(m, "FriendlyName");
+            string path = ReadProp(m, "DevicePath");
+            bool hit = name.IndexOf(match, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       (path.Length > 0 && path.IndexOf(match, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (!hit) { Marshal.ReleaseComObject(m); continue; }
             object fo; Guid bf = IID_IBaseFilter; m.BindToObject(null, null, ref bf, out fo);
             return fo as IAMCameraControl;
         }
