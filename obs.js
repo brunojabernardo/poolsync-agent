@@ -7,6 +7,43 @@
 //   - 'log'    (level,msg) → human-readable progress for the console
 const EventEmitter = require('events');
 const OBSWebSocket = require('obs-websocket-js').default;
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFile } = require('child_process');
+
+// Physical camera focus is NOT exposed by OBS (win-dshow keeps focus behind the
+// driver's own property page). We control it directly at the Windows level with
+// a tiny bundled DirectShow helper (IAMCameraControl). It's extracted from the
+// packaged binary to a temp path once, then invoked per focus change.
+let _camFocusExe = null;
+function ensureCamFocusExe() {
+  if (_camFocusExe && fs.existsSync(_camFocusExe)) return _camFocusExe;
+  const bundled = path.join(__dirname, 'native', 'CamFocus.exe');
+  if (process.pkg) {
+    const tmp = path.join(os.tmpdir(), 'poolsync-camfocus.exe');
+    try {
+      if (!fs.existsSync(tmp) || fs.statSync(tmp).size !== fs.statSync(bundled).size) {
+        fs.writeFileSync(tmp, fs.readFileSync(bundled));
+      }
+      _camFocusExe = tmp;
+    } catch (e) { throw new Error('CamFocus.exe indisponível: ' + e.message); }
+  } else {
+    _camFocusExe = bundled;
+  }
+  return _camFocusExe;
+}
+function runCamFocus(args) {
+  return new Promise((resolve, reject) => {
+    let exe;
+    try { exe = ensureCamFocusExe(); } catch (e) { return reject(e); }
+    execFile(exe, args, { timeout: 8000, windowsHide: true }, (err, stdout, stderr) => {
+      const out = String(stdout || '').trim();
+      if (err) return reject(new Error(String(stderr || out || err.message).trim()));
+      resolve(out);
+    });
+  });
+}
 // Target display box (px) per scene → camera, derived from the shipped scene
 // collection. Locking cameras to these boxes with bounds makes the layout
 // resolution-independent (any camera fills its box, no deformation).
@@ -36,15 +73,9 @@ const ACTIONS = new Set([
   'getProgramPreview',
   // Per-camera framing (zoom + pan) via a crop filter on the input
   'setCameraFraming',
-  // Per-camera physical focus (auto on/off + 0..100) via dshow source settings
+  // Per-camera physical focus (auto on/off + 0..100) via the DirectShow helper
   'setCameraFocus', 'getCameraFocus'
 ]);
-
-// dshow source setting keys that OBS may use for the physical focus control.
-// Different OBS versions / cameras expose different variants, so we write all
-// the plausible ones (unknown keys are harmless) and read them back the same way.
-const FOCUS_AUTO_KEYS = ['autofocus', 'focus_auto', 'AutoFocus', 'focus_automatic'];
-const FOCUS_VALUE_KEYS = ['focus', 'Focus', 'focus_absolute'];
 
 // Named OBS services + the EXACT ingest server OBS expects for each (read from
 // a real OBS "Facebook Live" setup via GetStreamServiceSettings). The server
@@ -554,35 +585,33 @@ class ObsManager extends EventEmitter {
   }
 
   // ── Per-camera physical focus (auto on/off + 0..100) ──
-  // OBS win-dshow stores focus as the raw driver value. Ranges are device
-  // specific (commonly 0..255 for UVC), so we map the UI's 0..100% onto 0..255
-  // as a sane default; calibrate per-camera later via getCameraFocus.
+  // Resolve the OBS input's device to a friendly name, then drive its UVC focus
+  // via the DirectShow helper (percent → device range mapping happens there).
+  async _cameraDeviceName(inputName) {
+    const s = await this.obs.call('GetInputSettings', { inputName });
+    const vid = (s.inputSettings && (s.inputSettings.video_device_id || s.inputSettings.last_video_device_id)) || '';
+    // OBS stores "<FriendlyName>:<device path>"; the name is the unique-enough match.
+    const name = String(vid).split(':')[0].trim();
+    if (!name) throw new Error('câmara sem dispositivo atribuído');
+    return name;
+  }
+
   async _setCameraFocus(params) {
     const inputName = params && params.inputName;
     if (!inputName) throw new Error('inputName em falta');
     const auto = !!(params && params.auto);
     const value = Math.max(0, Math.min(100, Math.round(Number(params && params.value) || 0)));
-    const raw = Math.round((value / 100) * 255);
-
-    const inputSettings = {};
-    FOCUS_AUTO_KEYS.forEach((k) => { inputSettings[k] = auto; });
-    if (!auto) FOCUS_VALUE_KEYS.forEach((k) => { inputSettings[k] = raw; });
-
-    await this.obs.call('SetInputSettings', { inputName, inputSettings, overlay: true });
-    return { inputName, focus: { auto, value } };
+    const device = await this._cameraDeviceName(inputName);
+    const out = await runCamFocus(['set', device, auto ? 'auto' : String(value)]);
+    return { inputName, device, focus: { auto, value }, helper: out };
   }
 
-  // Diagnostic: dump the camera's current dshow settings so we can see which
-  // focus-related keys (and value ranges) the real camera actually uses.
+  // Diagnostic: read the camera's real focus range/current value via the helper.
   async _getCameraFocus(inputName) {
     if (!inputName) throw new Error('inputName em falta');
-    const s = await this.obs.call('GetInputSettings', { inputName });
-    const all = s.inputSettings || {};
-    const focusKeys = {};
-    Object.keys(all).forEach((k) => {
-      if (/focus/i.test(k)) focusKeys[k] = all[k];
-    });
-    return { inputName, focusKeys, settings: all };
+    const device = await this._cameraDeviceName(inputName);
+    const out = await runCamFocus(['get', device]);
+    return { inputName, device, helper: out };
   }
 
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
