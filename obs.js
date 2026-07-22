@@ -35,8 +35,16 @@ const ACTIONS = new Set([
   // Live program preview (screenshot of what's on air)
   'getProgramPreview',
   // Per-camera framing (zoom + pan) via a crop filter on the input
-  'setCameraFraming'
+  'setCameraFraming',
+  // Per-camera physical focus (auto on/off + 0..100) via dshow source settings
+  'setCameraFocus', 'getCameraFocus'
 ]);
+
+// dshow source setting keys that OBS may use for the physical focus control.
+// Different OBS versions / cameras expose different variants, so we write all
+// the plausible ones (unknown keys are harmless) and read them back the same way.
+const FOCUS_AUTO_KEYS = ['autofocus', 'focus_auto', 'AutoFocus', 'focus_automatic'];
+const FOCUS_VALUE_KEYS = ['focus', 'Focus', 'focus_absolute'];
 
 // Named OBS services + the EXACT ingest server OBS expects for each (read from
 // a real OBS "Facebook Live" setup via GetStreamServiceSettings). The server
@@ -545,6 +553,38 @@ class ObsManager extends EventEmitter {
     return { inputName, framing: await this._getCameraFraming(inputName) };
   }
 
+  // ── Per-camera physical focus (auto on/off + 0..100) ──
+  // OBS win-dshow stores focus as the raw driver value. Ranges are device
+  // specific (commonly 0..255 for UVC), so we map the UI's 0..100% onto 0..255
+  // as a sane default; calibrate per-camera later via getCameraFocus.
+  async _setCameraFocus(params) {
+    const inputName = params && params.inputName;
+    if (!inputName) throw new Error('inputName em falta');
+    const auto = !!(params && params.auto);
+    const value = Math.max(0, Math.min(100, Math.round(Number(params && params.value) || 0)));
+    const raw = Math.round((value / 100) * 255);
+
+    const inputSettings = {};
+    FOCUS_AUTO_KEYS.forEach((k) => { inputSettings[k] = auto; });
+    if (!auto) FOCUS_VALUE_KEYS.forEach((k) => { inputSettings[k] = raw; });
+
+    await this.obs.call('SetInputSettings', { inputName, inputSettings, overlay: true });
+    return { inputName, focus: { auto, value } };
+  }
+
+  // Diagnostic: dump the camera's current dshow settings so we can see which
+  // focus-related keys (and value ranges) the real camera actually uses.
+  async _getCameraFocus(inputName) {
+    if (!inputName) throw new Error('inputName em falta');
+    const s = await this.obs.call('GetInputSettings', { inputName });
+    const all = s.inputSettings || {};
+    const focusKeys = {};
+    Object.keys(all).forEach((k) => {
+      if (/focus/i.test(k)) focusKeys[k] = all[k];
+    });
+    return { inputName, focusKeys, settings: all };
+  }
+
   // Execute a high-level command. Returns { ok, data } or { ok:false, error }.
   async execute(action, params = {}) {
     if (!ACTIONS.has(action)) {
@@ -581,6 +621,10 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._getProgramPreview() };
         case 'setCameraFraming':
           return { ok: true, data: await this._setCameraFraming(params) };
+        case 'setCameraFocus':
+          return { ok: true, data: await this._setCameraFocus(params) };
+        case 'getCameraFocus':
+          return { ok: true, data: await this._getCameraFocus(params && params.inputName) };
 
         case 'setScene':
           await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });
