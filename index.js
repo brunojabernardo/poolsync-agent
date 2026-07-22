@@ -154,6 +154,20 @@ async function runOneShot(command, arg) {
         console.log(`  ${(q[c.quadrant] || c.quadrant).padEnd(9)} → ${c.label}`);
       }
     }
+  } else if (command === 'camctl') {
+    const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
+    const inputs = await obs._getCameraInputs();
+    const byNum = {};
+    inputs.forEach((i) => { const mm = /mesa\s*(\d+)/i.exec(i.inputName); if (mm) byNum[mm[1]] = i.inputName; });
+    const inputName = byNum[parts[0]] || parts[0] || (inputs[0] && inputs[0].inputName);
+    logLine('info', `getCameraControls("${inputName}")`);
+    const g = await obs.execute('getCameraControls', { inputName });
+    console.log(JSON.stringify(g, null, 2));
+    if (parts[1] && parts[2]) {
+      logLine('info', `setCameraControl ${parts[1]}=${parts[2]}`);
+      const st = await obs.execute('setCameraControl', { inputName, prop: parts[1], value: Number(parts[2]) });
+      console.log(JSON.stringify(st, null, 2));
+    }
   } else if (command === 'scene') {
     if (!arg) { logLine('error', 'Falta o nome da cena: node index.js scene "Nome"'); }
     else {
@@ -215,7 +229,7 @@ async function runAgent() {
 const [, , cmd, ...rest] = process.argv;
 banner();
 
-if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras', 'stream-info', 'frame', 'preview'].includes(cmd)) {
+if (['status', 'scenes', 'scene', 'cameras', 'layout', 'set-layout', 'lock-cameras', 'stream-info', 'frame', 'preview', 'camctl'].includes(cmd)) {
   runOneShot(cmd, rest.join(' ').trim()).catch((err) => {
     logLine('error', err.message);
     process.exit(1);
