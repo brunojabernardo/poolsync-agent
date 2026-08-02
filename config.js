@@ -46,7 +46,7 @@ const config = {
     password: String(val('OBS_PASSWORD', ''))
   },
 
-  // NICESTSB server the agent relays through. Empty SERVER_URL = local-only
+  // PoolSync server the agent relays through. Empty SERVER_URL = local-only
   // mode (OBS control via CLI, no cloud link) — handy for first tests.
   server: {
     url: String(val('SERVER_URL', '')).trim(),

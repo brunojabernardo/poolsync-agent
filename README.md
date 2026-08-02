@@ -1,11 +1,11 @@
 # PoolSync Agent
 
 Processo local que corre na máquina do operador e controla o **OBS** em nome da
-app **NICESTSB**. Liga-se ao OBS por WebSocket (`ws://localhost:4455`) e — quando
-configurado — liga-se ao servidor NICESTSB por `wss://`, funcionando como ponte:
+app **PoolSync**. Liga-se ao OBS por WebSocket (`ws://localhost:4455`) e — quando
+configurado — liga-se ao servidor PoolSync por `wss://`, funcionando como ponte:
 
 ```
-Admin (browser) ──wss──▶ NICESTSB (servidor) ◀──wss── PoolSync Agent ──ws──▶ OBS
+Admin (browser) ──wss──▶ PoolSync (servidor) ◀──wss── PoolSync Agent ──ws──▶ OBS
 ```
 
 Porquê um agente e não o browser a falar direto com o OBS? Porque a app é servida

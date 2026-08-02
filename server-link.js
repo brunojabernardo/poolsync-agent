@@ -1,4 +1,4 @@
-// Cloud link: connects the agent to the NICESTSB server over Socket.IO and
+// Cloud link: connects the agent to the PoolSync server over Socket.IO and
 // bridges it to the local OBS manager.
 //
 //   server ──'obs:command' {action,params} + ack──▶ agent ──▶ OBS
