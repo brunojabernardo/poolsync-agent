@@ -119,6 +119,9 @@ const ZOOM_FILTER = 'PoolSync Zoom';
 // mexer no retângulo que está no ar (a máscara dos cantos fica alinhada).
 const MAX_ZOOM = 0.85;
 
+// Resolucao que se pede a uma camara USB quando ela a suporta.
+const CAM_RESOLUCAO_ALVO = '1920x1080';
+
 function fitInside(srcW, srcH, aspect) {
   let w = srcW, h = srcW / aspect;
   if (h > srcH) { h = srcH; w = srcH * aspect; }
@@ -373,8 +376,10 @@ class ObsManager extends EventEmitter {
         } catch (_) {}
         try {
           const s = await this.obs.call('GetInputSettings', { inputName: name });
-          const v = s.inputSettings && (s.inputSettings.video_device_id || s.inputSettings.last_video_device_id);
+          const cfg = s.inputSettings || {};
+          const v = cfg.video_device_id || cfg.last_video_device_id;
           entry.currentDeviceId = v ? String(v) : null;
+          entry.resolucao = Number(cfg.res_type) === 1 ? String(cfg.resolution || '') : '';
         } catch (_) {}
       } else {
         // Câmara IP: o "dispositivo" é o endereço RTSP.
@@ -410,6 +415,32 @@ class ObsManager extends EventEmitter {
     return this._getCameras();
   }
 
+  // Muitas webcams arrancam na resolução por omissão do dispositivo, que é
+  // 640x480 — quadrada ao lado de um placar 16:9, e obriga a andar a acertar
+  // tamanhos à mão. Ao escolher a câmara, põe-se 1920x1080 se ela a tiver;
+  // senão a maior 16:9 que ofereça; senão fica como estava, que é melhor do
+  // que pedir-lhe uma resolução que ela não sabe dar.
+  async _melhorResolucao(inputName) {
+    let itens = [];
+    try {
+      const r = await this.obs.call('GetInputPropertiesListPropertyItems', {
+        inputName, propertyName: 'resolution'
+      });
+      itens = (r.propertyItems || [])
+        .filter((p) => p.itemEnabled !== false)
+        .map((p) => String(p.itemValue || p.itemName || '').trim())
+        .filter(Boolean);
+    } catch (_) {
+      return null; // dispositivo sem lista de resoluções (ou sem dispositivo)
+    }
+    if (itens.includes(CAM_RESOLUCAO_ALVO)) return CAM_RESOLUCAO_ALVO;
+    const dezasseisPorNove = itens
+      .map((v) => { const m = /^(\d+)\s*x\s*(\d+)$/.exec(v); return m ? { v, w: Number(m[1]), h: Number(m[2]) } : null; })
+      .filter((x) => x && x.h > 0 && Math.abs(x.w / x.h - 16 / 9) < 0.02)
+      .sort((a, b) => b.w - a.w);
+    return dezasseisPorNove.length ? dezasseisPorNove[0].v : null;
+  }
+
   async _setCameraDevice(params) {
     const inputName = params && params.inputName;
     const deviceId = params && params.deviceId;
@@ -419,6 +450,17 @@ class ObsManager extends EventEmitter {
       inputSettings: { video_device_id: deviceId, last_video_device_id: deviceId },
       overlay: true
     });
+
+    const resolucao = await this._melhorResolucao(inputName);
+    if (resolucao) {
+      // res_type 1 = "personalizada"; sem isto o OBS ignora a resolução.
+      await this.obs.call('SetInputSettings', {
+        inputName,
+        inputSettings: { res_type: 1, resolution: resolucao },
+        overlay: true
+      });
+    }
+    return resolucao;
   }
 
   async _getCameraThumbnails(names) {
@@ -795,9 +837,10 @@ class ObsManager extends EventEmitter {
         // Data-returning actions bypass the snapshot return below.
         case 'getCameras':
           return { ok: true, data: await this._getCameras() };
-        case 'setCameraDevice':
-          await this._setCameraDevice(params);
-          return { ok: true, data: await this._getCameras() };
+        case 'setCameraDevice': {
+          const resolucao = await this._setCameraDevice(params);
+          return { ok: true, data: Object.assign({ resolucao }, await this._getCameras()) };
+        }
         case 'setCameraSource':
           return { ok: true, data: await this._setCameraSource(params) };
         case 'getCameraThumbnails':
