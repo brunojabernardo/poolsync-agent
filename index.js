@@ -12,7 +12,7 @@
 //
 // The one-shot commands let you verify OBS control WITHOUT the server configured.
 const config = require('./config');
-const { ObsManager } = require('./obs');
+const { ObsManager, cameraLabel } = require('./obs');
 const { ServerLink } = require('./server-link');
 const { startLocalPreview } = require('./local-preview');
 
@@ -108,7 +108,7 @@ async function runOneShot(command, arg) {
     const zoom = Number(parts[1] || 0), panX = Number(parts[2] || 0), panY = Number(parts[3] || 0);
     const inputs = await obs._getCameraInputs();
     const byNum = {};
-    inputs.forEach((i) => { const mm = /mesa\s*(\d+)/i.exec(i.inputName); if (mm) byNum[mm[1]] = i.inputName; });
+    inputs.forEach((i) => { const mm = /(\d+)/.exec(cameraLabel(i.inputName)); if (mm) byNum[mm[1]] = i.inputName; });
     const inputName = byNum[num] || num;
     logLine('info', `A aplicar enquadramento em "${inputName}": zoom=${zoom} panX=${panX} panY=${panY}`);
     const res = await obs.execute('setCameraFraming', { inputName, zoom, panX, panY });
@@ -141,7 +141,7 @@ async function runOneShot(command, arg) {
     const quads = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'];
     const inputs = await obs._getCameraInputs();
     const byNum = {};
-    inputs.forEach((i) => { const mm = /mesa\s*(\d+)/i.exec(i.inputName); if (mm) byNum[mm[1]] = i.inputName; });
+    inputs.forEach((i) => { const mm = /(\d+)/.exec(cameraLabel(i.inputName)); if (mm) byNum[mm[1]] = i.inputName; });
     const assignments = order
       .map((num, idx) => ({ inputName: byNum[num], quadrant: quads[idx] }))
       .filter((a) => a.inputName && a.quadrant);
@@ -158,7 +158,7 @@ async function runOneShot(command, arg) {
     const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
     const inputs = await obs._getCameraInputs();
     const byNum = {};
-    inputs.forEach((i) => { const mm = /mesa\s*(\d+)/i.exec(i.inputName); if (mm) byNum[mm[1]] = i.inputName; });
+    inputs.forEach((i) => { const mm = /(\d+)/.exec(cameraLabel(i.inputName)); if (mm) byNum[mm[1]] = i.inputName; });
     const inputName = byNum[parts[0]] || parts[0] || (inputs[0] && inputs[0].inputName);
     logLine('info', `getCameraControls("${inputName}")`);
     const g = await obs.execute('getCameraControls', { inputName });
@@ -186,17 +186,28 @@ async function runAgent() {
   const obs = new ObsManager(config);
   obs.on('log', logLine);
 
-  // Lock cameras to their fixed boxes once, as soon as OBS is connected, so the
-  // layout is resolution-independent without the operator doing anything. Only
-  // in the long-running agent (not in one-shot CLI commands).
+  // Fixa as câmaras nas caixas que já ocupam assim que o OBS liga, para o
+  // layout ficar imune à resolução da fonte sem ninguém fazer nada. Só no agente
+  // a correr (não nos comandos de uma vez só).
+  // Uma câmara IP pode levar uns segundos a dar imagem, e sem imagem não há
+  // caixa para fixar — daí as tentativas espaçadas até apanhar alguma.
+  let autoLockTries = 0;
+  const autoLock = () => {
+    autoLockTries++;
+    obs.execute('lockCameraBoxes')
+      .then((r) => {
+        const locked = r && r.ok ? r.data.locked : 0;
+        if (locked) logLine('info', `Câmaras fixadas (${locked} posições) — layout imune à resolução.`);
+        else if (autoLockTries < 5 && obs.connected) setTimeout(autoLock, 6000);
+      })
+      .catch(() => {});
+  };
   let didAutoLock = false;
   obs.on('state', (s) => {
     logLine('debug', `estado: cena="${s.currentProgramScene}" stream=${s.streaming} rec=${s.recording} cenas=${s.scenes.length}`);
     if (s.obsConnected && !didAutoLock) {
       didAutoLock = true;
-      obs.execute('lockCameraBoxes')
-        .then((r) => { if (r && r.ok) logLine('info', `Câmaras fixadas (${r.data.locked} posições) — layout imune à resolução.`); })
-        .catch(() => {});
+      autoLock();
     }
   });
 

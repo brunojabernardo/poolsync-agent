@@ -46,12 +46,6 @@ function runCamCtl(args) {
     });
   });
 }
-// Target display box (px) per scene → camera, derived from the shipped scene
-// collection. Locking cameras to these boxes with bounds makes the layout
-// resolution-independent (any camera fills its box, no deformation).
-let CAMERA_BOXES = {};
-try { CAMERA_BOXES = require('./camera-boxes.json'); } catch (_) { CAMERA_BOXES = {}; }
-
 // The set of high-level actions the app is allowed to trigger. Each maps to one
 // or more OBS requests. Scene names are validated by OBS itself (a bad name
 // returns a request error we surface back to the caller).
@@ -65,6 +59,8 @@ const ACTIONS = new Set([
   'startRecord', 'stopRecord', 'toggleRecord',
   // Camera identification
   'getCameras', 'setCameraDevice', 'getCameraThumbnails',
+  // Endereço/qualidade das câmaras IP (RTSP)
+  'setCameraSource',
   // Layout detection + control (which camera sits in which quadrant)
   'getLayout', 'setLayout',
   // Lock cameras to fixed boxes (resolution-independent layout)
@@ -95,16 +91,91 @@ const QUADRANT_CORNER = {
   BOTTOM_RIGHT: { fx: 0.5, fy: 0.5 }
 };
 
-// Friendly label for a camera input, e.g. "Camera Mesa 1" → "Mesa 1".
+// Friendly label for a camera input: "Camera Mesa 1" ou "Camera 1" → "Mesa 1".
 function cameraLabel(name) {
-  const m = /mesa\s*(\d+)/i.exec(String(name || ''));
-  return m ? `Mesa ${m[1]}` : String(name || '');
+  const s = String(name || '');
+  const m = /mesa\s*(\d+)/i.exec(s) || /^c[âa]m[ae]ra\s*(\d+)\b/i.exec(s.trim());
+  return m ? `Mesa ${m[1]}` : s;
+}
+
+// Uma "câmara" é uma captura USB (dshow) ou uma câmara IP, que entra no OBS como
+// media source (ffmpeg). Nas IP só contam as fontes chamadas "Camera …", senão um
+// vídeo de intro qualquer passava por câmara.
+function isCameraInput(kind, name) {
+  if (kind === 'dshow_input') return true;
+  return kind === 'ffmpeg_source' && /^c[âa]m[ae]ra\b/i.test(String(name || '').trim());
 }
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function r2(n) { return Math.round(n * 100) / 100; }
 
-// Name of the crop/pad filter the app manages on each camera for zoom + pan.
+// Name of the crop/pad filter the app used to manage on each camera for zoom.
+// Substituído pelo recorte por cena (ver _setCameraFraming); só o removemos.
 const ZOOM_FILTER = 'PoolSync Zoom';
+
+// ── Enquadramento (zoom + pan) em píxeis da fonte ──
+// A região visível mantém sempre a proporção da caixa onde a câmara é desenhada,
+// por isso a imagem enche a caixa exatamente: sem barras, sem deformação e sem
+// mexer no retângulo que está no ar (a máscara dos cantos fica alinhada).
+const MAX_ZOOM = 0.85;
+
+function fitInside(srcW, srcH, aspect) {
+  let w = srcW, h = srcW / aspect;
+  if (h > srcH) { h = srcH; w = srcH * aspect; }
+  return { w, h };
+}
+
+function framingCrop(srcW, srcH, aspect, zoom, panX, panY) {
+  const full = fitInside(srcW, srcH, aspect);
+  const w = Math.round(full.w * (1 - zoom));
+  const h = Math.round(full.h * (1 - zoom));
+  const left = clamp(Math.round(srcW / 2 + (panX * (srcW - w)) / 2 - w / 2), 0, Math.max(0, srcW - w));
+  const top = clamp(Math.round(srcH / 2 + (panY * (srcH - h)) / 2 - h / 2), 0, Math.max(0, srcH - h));
+  return { left, top, right: Math.max(0, srcW - left - w), bottom: Math.max(0, srcH - top - h) };
+}
+
+// Inverso do anterior. Recortes feitos à mão no OBS que não sigam esta convenção
+// dão zoom 0 (é o mínimo) — assim que se mexe num controlo, normalizam-se.
+function framingFromCrop(srcW, srcH, aspect, crop) {
+  const full = fitInside(srcW, srcH, aspect);
+  const w = srcW - crop.left - crop.right;
+  const h = srcH - crop.top - crop.bottom;
+  if (!(w > 0 && h > 0 && full.w > 0 && full.h > 0)) return { zoom: 0, panX: 0, panY: 0 };
+  return {
+    zoom: clamp(1 - w / full.w, 0, MAX_ZOOM),
+    panX: srcW - w > 1 ? clamp((crop.left + w / 2 - srcW / 2) / ((srcW - w) / 2), -1, 1) : 0,
+    panY: srcH - h > 1 ? clamp((crop.top + h / 2 - srcH / 2) / ((srcH - h) / 2), -1, 1) : 0
+  };
+}
+
+// Caixa onde o item é desenhado: os bounds quando existem, senão o tamanho já
+// renderizado (é esse que vamos fixar em bounds).
+function itemBox(t) {
+  const hasBounds = t.boundsType && t.boundsType !== 'OBS_BOUNDS_NONE' && t.boundsWidth > 1 && t.boundsHeight > 1;
+  const w = hasBounds ? t.boundsWidth : t.width;
+  const h = hasBounds ? t.boundsHeight : t.height;
+  return w > 1 && h > 1 ? { w, h } : null;
+}
+
+// Qualidade do stream RTSP: quase todas as câmaras servem um stream principal e
+// um secundário no mesmo endereço, com o nome trocado (Reolink `_main`/`_sub`,
+// Dahua `subtype=`, Hikvision `/Channels/101`). Sem padrão conhecido → só o
+// endereço à mão.
+function rtspQuality(url) {
+  const s = String(url || '');
+  if (/_sub\b/i.test(s) || /subtype=1\b/i.test(s) || /\/Channels\/\d02\b/i.test(s)) return 'sub';
+  if (/_main\b/i.test(s) || /subtype=0\b/i.test(s) || /\/Channels\/\d01\b/i.test(s)) return 'main';
+  return null;
+}
+
+function rtspWithQuality(url, quality) {
+  const s = String(url || '');
+  const want = quality === 'sub' ? 'sub' : 'main';
+  if (/_(main|sub)\b/i.test(s)) return s.replace(/_(main|sub)\b/i, '_' + want);
+  if (/subtype=[01]\b/i.test(s)) return s.replace(/subtype=[01]\b/i, 'subtype=' + (want === 'sub' ? 1 : 0));
+  if (/\/Channels\/(\d)0[12]\b/i.test(s)) return s.replace(/\/Channels\/(\d)0[12]\b/i, (m, ch) => `/Channels/${ch}0${want === 'sub' ? 2 : 1}`);
+  return s;
+}
 
 class ObsManager extends EventEmitter {
   constructor(config) {
@@ -279,35 +350,64 @@ class ObsManager extends EventEmitter {
   // this visually.
   async _getCameraInputs() {
     const { inputs } = await this.obs.call('GetInputList');
-    return (inputs || []).filter((i) => i.inputKind === 'dshow_input');
+    return (inputs || []).filter((i) => isCameraInput(i.inputKind, i.inputName));
   }
 
   async _getCameras() {
     const cams = await this._getCameraInputs();
+    const idx = await this._sceneItemIndex();
     const out = [];
     for (const cam of cams) {
       const name = cam.inputName;
-      let devices = [];
-      let currentDeviceId = null;
-      try {
-        const items = await this.obs.call('GetInputPropertiesListPropertyItems', {
-          inputName: name, propertyName: 'video_device_id'
-        });
-        devices = (items.propertyItems || [])
-          .filter((p) => p.itemEnabled !== false && p.itemValue)
-          .map((p) => ({ name: p.itemName, value: String(p.itemValue) }));
-      } catch (_) {}
-      try {
-        const s = await this.obs.call('GetInputSettings', { inputName: name });
-        const v = s.inputSettings && (s.inputSettings.video_device_id || s.inputSettings.last_video_device_id);
-        currentDeviceId = v ? String(v) : null;
-      } catch (_) {}
-      let framing = { zoom: 0, panX: 0, panY: 0 };
-      try { framing = await this._getCameraFraming(name); } catch (_) {}
-      out.push({ inputName: name, label: cameraLabel(name), devices, currentDeviceId, framing });
+      const kind = cam.inputKind;
+      const entry = { inputName: name, label: cameraLabel(name), kind, devices: [], currentDeviceId: null, url: null, quality: null };
+
+      if (kind === 'dshow_input') {
+        try {
+          const items = await this.obs.call('GetInputPropertiesListPropertyItems', {
+            inputName: name, propertyName: 'video_device_id'
+          });
+          entry.devices = (items.propertyItems || [])
+            .filter((p) => p.itemEnabled !== false && p.itemValue)
+            .map((p) => ({ name: p.itemName, value: String(p.itemValue) }));
+        } catch (_) {}
+        try {
+          const s = await this.obs.call('GetInputSettings', { inputName: name });
+          const v = s.inputSettings && (s.inputSettings.video_device_id || s.inputSettings.last_video_device_id);
+          entry.currentDeviceId = v ? String(v) : null;
+        } catch (_) {}
+      } else {
+        // Câmara IP: o "dispositivo" é o endereço RTSP.
+        try {
+          const s = await this.obs.call('GetInputSettings', { inputName: name });
+          entry.url = String((s.inputSettings && s.inputSettings.input) || '');
+          entry.quality = rtspQuality(entry.url);
+        } catch (_) {}
+      }
+
+      // O endereço de exemplo que vem na coleção não conta como câmara pronta.
+      entry.ready = kind === 'dshow_input'
+        ? !!entry.currentDeviceId
+        : !!entry.url && !/IP_DA_CAMARA|UTILIZADOR|PALAVRA_PASSE/i.test(entry.url);
+      try { entry.framing = this._framingFromIndex(name, idx); } catch (_) { entry.framing = null; }
+      out.push(entry);
     }
     out.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
     return { cameras: out };
+  }
+
+  // Endereço RTSP de uma câmara IP. Aceita um `url` novo ou só a `quality`
+  // (principal/secundário), reescrevendo o endereço que já lá está.
+  async _setCameraSource(params) {
+    const inputName = params && params.inputName;
+    if (!inputName) throw new Error('inputName em falta');
+    const s = await this.obs.call('GetInputSettings', { inputName });
+    const current = String((s.inputSettings && s.inputSettings.input) || '');
+    let url = params && typeof params.url === 'string' && params.url.trim() ? params.url.trim() : current;
+    if (params && params.quality) url = rtspWithQuality(url, params.quality);
+    if (!url) throw new Error('endereço em falta');
+    await this.obs.call('SetInputSettings', { inputName, inputSettings: { input: url }, overlay: true });
+    return this._getCameras();
   }
 
   async _setCameraDevice(params) {
@@ -339,12 +439,41 @@ class ObsManager extends EventEmitter {
     return { thumbnails };
   }
 
+  // ── Índice de cenas → itens ──
+  // Quase tudo o que mexe em câmaras precisa de percorrer todas as cenas, e cada
+  // percurso são ~20 pedidos ao OBS. Guarda-se por instantes para que abrir a tab
+  // não dispare a mesma volta quatro vezes seguidas.
+  async _sceneItemIndex(force) {
+    const now = Date.now();
+    if (!force && this._sceneIdx && now - (this._sceneIdxAt || 0) < 3000) return this._sceneIdx;
+    const { scenes } = await this.obs.call('GetSceneList');
+    const idx = [];
+    for (const sc of scenes || []) {
+      try {
+        const { sceneItems } = await this.obs.call('GetSceneItemList', { sceneName: sc.sceneName });
+        idx.push({ scene: sc.sceneName, items: sceneItems || [] });
+      } catch (_) {}
+    }
+    this._sceneIdx = idx;
+    this._sceneIdxAt = now;
+    return idx;
+  }
+
+  _invalidateSceneIndex() { this._sceneIdxAt = 0; }
+
+  // Cena de grelha onde a disposição das câmaras é editável ("Pool - 4 Mesas" na
+  // coleção atual, "LIVE - All Tables" na antiga).
+  _gridScene() {
+    const scenes = this.state.scenes || [];
+    return scenes.find((n) => /(^|-\s*)(\d+\s*mesas|all tables|todas as mesas)/i.test(n)) || 'Pool - 4 Mesas';
+  }
+
   // ── Layout detection ──
-  // Read where each camera sits inside a grid scene (default "LIVE - All
-  // Tables") and classify it into a quadrant, so the app can show/label the
-  // physical arrangement without the operator measuring anything.
+  // Read where each camera sits inside the grid scene and classify it into a
+  // quadrant, so the app can show/label the physical arrangement without the
+  // operator measuring anything.
   async _getLayout(sceneName) {
-    const scene = sceneName || 'LIVE - All Tables';
+    const scene = sceneName || this._gridScene();
     const video = await this.obs.call('GetVideoSettings').catch(() => ({}));
     const baseW = Number(video.baseWidth) || 1920;
     const baseH = Number(video.baseHeight) || 1080;
@@ -390,7 +519,7 @@ class ObsManager extends EventEmitter {
   // assignments: [{ inputName, quadrant }]. Bounds keep aspect (SCALE_INNER);
   // since cameras and quadrants are both 16:9 they fill exactly.
   async _setLayout(params) {
-    const scene = (params && params.scene) || 'LIVE - All Tables';
+    const scene = (params && params.scene) || this._gridScene();
     const assignments = (params && Array.isArray(params.assignments)) ? params.assignments : [];
     if (!assignments.length) throw new Error('sem disposição para aplicar');
 
@@ -423,47 +552,43 @@ class ObsManager extends EventEmitter {
         }
       });
     }
+    this._invalidateSceneIndex();
     return this._getLayout(scene); // confirm the new arrangement
   }
 
-  // Lock every camera to its designed box using bounds, so any camera fills its
-  // box regardless of native resolution (no more deformation). Boxes come from
-  // CAMERA_BOXES (derived from the scene collection). Idempotent-ish: re-running
-  // just re-applies the same bounds.
+  // Fixa cada câmara na caixa que já ocupa, usando bounds. A partir daí a caixa
+  // no ar é imune ao que a fonte fizer — trocar de câmara, de resolução ou
+  // recortar para dar zoom deixa de mexer no retângulo, e as máscaras dos cantos
+  // ficam onde estão. As caixas são lidas da própria coleção, por isso funciona
+  // com qualquer conjunto de cenas. Repetir é inofensivo.
   async _lockCameraBoxes() {
+    const camNames = new Set((await this._getCameraInputs()).map((i) => i.inputName));
+    if (!camNames.size) return { locked: 0, items: [] };
+    const idx = await this._sceneItemIndex(true);
     const results = [];
-    for (const [sceneName, cams] of Object.entries(CAMERA_BOXES)) {
-      let items = [];
-      try {
-        items = (await this.obs.call('GetSceneItemList', { sceneName })).sceneItems || [];
-      } catch (_) {
-        continue; // scene may not exist in this collection
-      }
-      const itemByName = {};
-      items.forEach((it) => { itemByName[it.sourceName] = it; });
-
-      for (const [cam, box] of Object.entries(cams)) {
-        const it = itemByName[cam];
-        if (!it) continue;
+    for (const sc of idx) {
+      for (const it of sc.items) {
+        if (!camNames.has(it.sourceName)) continue;
         const t = it.sceneItemTransform || {};
+        const box = itemBox(t);
+        if (!box) continue; // fonte ainda sem imagem (RTSP a ligar) — fica para a próxima
+        const w = Math.round(box.w), h = Math.round(box.h);
         try {
           await this.obs.call('SetSceneItemTransform', {
-            sceneName,
+            sceneName: sc.scene,
             sceneItemId: it.sceneItemId,
             sceneItemTransform: {
-              positionX: t.positionX,
-              positionY: t.positionY,
-              alignment: t.alignment,
               boundsType: 'OBS_BOUNDS_SCALE_INNER',
               boundsAlignment: 0,
-              boundsWidth: box[0],
-              boundsHeight: box[1]
+              boundsWidth: w,
+              boundsHeight: h
             }
           });
-          results.push({ scene: sceneName, camera: cameraLabel(cam), box: `${box[0]}x${box[1]}` });
+          results.push({ scene: sc.scene, camera: cameraLabel(it.sourceName), box: `${w}x${h}` });
         } catch (_) {}
       }
     }
+    this._invalidateSceneIndex();
     return { locked: results.length, items: results };
   }
 
@@ -524,66 +649,85 @@ class ObsManager extends EventEmitter {
     }
   }
 
-  // ── Per-camera framing (zoom + pan), global via a crop filter on the input ──
-  // Reads the current crop + the post-filter source size, then recovers the
-  // native resolution by adding the crop back (so zoom doesn't compound).
-  async _cameraCropAndDims(inputName) {
-    let crop = { left: 0, top: 0, right: 0, bottom: 0 };
-    try {
-      const f = await this.obs.call('GetSourceFilter', { sourceName: inputName, filterName: ZOOM_FILTER });
-      const s = f.filterSettings || {};
-      crop = { left: +s.left || 0, top: +s.top || 0, right: +s.right || 0, bottom: +s.bottom || 0 };
-    } catch (_) {}
-    let w = 1920, h = 1080;
-    for (const scene of ['LIVE - All Tables', 'LIVE - Table 1', 'LIVE - Table 2']) {
-      try {
-        const { sceneItems } = await this.obs.call('GetSceneItemList', { sceneName: scene });
-        const it = (sceneItems || []).find((x) => x.sourceName === inputName);
-        const t = it && it.sceneItemTransform;
-        if (t && t.sourceWidth) { w = t.sourceWidth; h = t.sourceHeight; break; }
-      } catch (_) {}
+  // ── Enquadramento por câmara (zoom + pan) ──
+  // O recorte é feito em cada item de cena, não num filtro do input. Assim a
+  // fonte nunca muda de tamanho (o zoom não se acumula sozinho), e como cada
+  // item está fixo em bounds, a caixa no ar não se mexe — só muda o pedaço da
+  // imagem que a preenche. Um único zoom/pan por câmara vale para todas as
+  // cenas: o recorte é recalculado com a proporção da caixa de cada uma.
+  _cameraSceneItems(inputName, idx) {
+    const out = [];
+    for (const sc of idx) {
+      for (const it of sc.items) {
+        if (it.sourceName !== inputName) continue;
+        const t = it.sceneItemTransform || {};
+        const box = itemBox(t);
+        const srcW = Number(t.sourceWidth) || 0;
+        const srcH = Number(t.sourceHeight) || 0;
+        if (!box || !srcW || !srcH) continue;
+        out.push({ scene: sc.scene, id: it.sceneItemId, t, box, srcW, srcH });
+      }
     }
-    // sceneItem sourceWidth/Height stay at the camera's native resolution even
-    // with the crop filter applied, so use them directly (adding the crop back
-    // would inflate the size and make zoom read/apply wrong).
-    return { crop, nativeW: w, nativeH: h };
+    return out;
+  }
+
+  _framingFromIndex(inputName, idx) {
+    const items = this._cameraSceneItems(inputName, idx);
+    if (!items.length) return null;
+    // Lê da cena de ecrã inteiro quando existe: é a que dá a leitura mais fina.
+    const it = items.slice().sort((a, b) => b.box.w * b.box.h - a.box.w * a.box.h)[0];
+    const t = it.t;
+    const f = framingFromCrop(it.srcW, it.srcH, it.box.w / it.box.h, {
+      left: +t.cropLeft || 0, right: +t.cropRight || 0, top: +t.cropTop || 0, bottom: +t.cropBottom || 0
+    });
+    return { zoom: r2(f.zoom), panX: r2(f.panX), panY: r2(f.panY), sourceWidth: it.srcW, sourceHeight: it.srcH, scenes: items.length };
   }
 
   async _getCameraFraming(inputName) {
-    const { crop, nativeW, nativeH } = await this._cameraCropAndDims(inputName);
-    const zoom = nativeW ? (crop.left + crop.right) / nativeW : 0;
-    const panX = (crop.left + crop.right) ? (crop.left - crop.right) / (crop.left + crop.right) : 0;
-    const panY = (crop.top + crop.bottom) ? (crop.top - crop.bottom) / (crop.top + crop.bottom) : 0;
-    const r2 = (n) => Math.round(n * 100) / 100;
-    return { zoom: r2(zoom), panX: r2(panX), panY: r2(panY) };
+    return this._framingFromIndex(inputName, await this._sceneItemIndex()) ||
+      { zoom: 0, panX: 0, panY: 0, sourceWidth: 0, sourceHeight: 0, scenes: 0 };
   }
 
   async _setCameraFraming(params) {
     const inputName = params && params.inputName;
     if (!inputName) throw new Error('inputName em falta');
-    const zoom = clamp(Number(params.zoom) || 0, 0, 0.8);
+    const zoom = clamp(Number(params.zoom) || 0, 0, MAX_ZOOM);
     const panX = clamp(Number(params.panX) || 0, -1, 1);
     const panY = clamp(Number(params.panY) || 0, -1, 1);
 
-    const { nativeW, nativeH } = await this._cameraCropAndDims(inputName);
-    const halfX = Math.round((zoom * nativeW) / 2);
-    const halfY = Math.round((zoom * nativeH) / 2);
-    const settings = {
-      relative: true,
-      left: Math.max(0, Math.round(halfX + panX * halfX)),
-      right: Math.max(0, Math.round(halfX - panX * halfX)),
-      top: Math.max(0, Math.round(halfY + panY * halfY)),
-      bottom: Math.max(0, Math.round(halfY - panY * halfY))
-    };
-    // Update the filter, creating it the first time.
-    try {
-      await this.obs.call('SetSourceFilterSettings', { sourceName: inputName, filterName: ZOOM_FILTER, filterSettings: settings });
-    } catch (_) {
-      await this.obs.call('CreateSourceFilter', {
-        sourceName: inputName, filterName: ZOOM_FILTER, filterKind: 'crop_filter', filterSettings: settings
-      });
+    // O zoom antigo era um filtro no input; com ele lá, os dois recortes
+    // somavam-se. Sai à primeira vez que se toca no enquadramento.
+    try { await this.obs.call('RemoveSourceFilter', { sourceName: inputName, filterName: ZOOM_FILTER }); } catch (_) {}
+
+    const idx = await this._sceneItemIndex(true);
+    const items = this._cameraSceneItems(inputName, idx);
+    if (!items.length) throw new Error('câmara sem imagem em nenhuma cena');
+
+    let applied = 0;
+    for (const it of items) {
+      const crop = framingCrop(it.srcW, it.srcH, it.box.w / it.box.h, zoom, panX, panY);
+      try {
+        await this.obs.call('SetSceneItemTransform', {
+          sceneName: it.scene,
+          sceneItemId: it.id,
+          sceneItemTransform: {
+            boundsType: 'OBS_BOUNDS_SCALE_INNER',
+            boundsAlignment: 0,
+            boundsWidth: Math.round(it.box.w),
+            boundsHeight: Math.round(it.box.h),
+            cropLeft: crop.left, cropRight: crop.right, cropTop: crop.top, cropBottom: crop.bottom
+          }
+        });
+        applied++;
+      } catch (_) {}
     }
-    return { inputName, framing: await this._getCameraFraming(inputName) };
+    this._invalidateSceneIndex();
+    const first = items[0];
+    return {
+      inputName,
+      applied,
+      framing: { zoom: r2(zoom), panX: r2(panX), panY: r2(panY), sourceWidth: first.srcW, sourceHeight: first.srcH, scenes: items.length }
+    };
   }
 
   // ── Native UVC camera control (Pan/Tilt/Zoom/Focus) via the DirectShow helper ──
@@ -647,6 +791,8 @@ class ObsManager extends EventEmitter {
         case 'setCameraDevice':
           await this._setCameraDevice(params);
           return { ok: true, data: await this._getCameras() };
+        case 'setCameraSource':
+          return { ok: true, data: await this._setCameraSource(params) };
         case 'getCameraThumbnails':
           return { ok: true, data: await this._getCameraThumbnails(params && params.names) };
         case 'getLayout':
@@ -696,4 +842,4 @@ class ObsManager extends EventEmitter {
   }
 }
 
-module.exports = { ObsManager, ACTIONS };
+module.exports = { ObsManager, ACTIONS, cameraLabel, framingCrop, framingFromCrop, rtspQuality, rtspWithQuality };
