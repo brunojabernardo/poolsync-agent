@@ -570,6 +570,13 @@ class ObsManager extends EventEmitter {
       for (const it of sc.items) {
         if (!camNames.has(it.sourceName)) continue;
         const t = it.sceneItemTransform || {};
+        // Só se re-afirma o que JÁ tem bounds. Um item posicionado por escala
+        // foi afinado à resolução das câmaras de quem montou a coleção: com uma
+        // câmara diferente ele já está a desenhar do tamanho errado, e fixá-lo
+        // assim cimentava o erro em vez de o corrigir. Esses ficam como estão,
+        // à espera de que a coleção lhes dê bounds.
+        const temBounds = t.boundsType && t.boundsType !== 'OBS_BOUNDS_NONE' && t.boundsWidth > 1 && t.boundsHeight > 1;
+        if (!temBounds) continue;
         const box = itemBox(t);
         if (!box) continue; // fonte ainda sem imagem (RTSP a ligar) — fica para a próxima
         const w = Math.round(box.w), h = Math.round(box.h);
