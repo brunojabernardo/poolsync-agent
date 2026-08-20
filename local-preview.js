@@ -92,7 +92,26 @@ function startLocalPreview(config, obs, log) {
     looping = false;
   }
 
-  server.on('error', (e) => log('warn', `Prévia local indisponível (porta ${port}): ${e.message}`));
+  // UM ERRO AQUI NAO PODE MATAR O AGENTE.
+  //
+  // O tratador estava so' no servidor HTTP, mas o `ws` REEMITE o erro na sua
+  // propria instancia — e um 'error' sem ouvinte derruba o processo. Bastava
+  // abrir o agente uma segunda vez (coisa que num clube acontece) para a
+  // segunda janela cuspir um despejo do Node e fechar. A previa e' um extra: o
+  // que interessa e' a ponte para o OBS, e essa continua.
+  // Os dois emitem o MESMO erro; avisa-se uma vez.
+  var jaAvisou = false;
+  function falhaDaPrevia(e) {
+    if (jaAvisou) return;
+    jaAvisou = true;
+    if (e && e.code === 'EADDRINUSE') {
+      log('warn', `Prévia local indisponível: a porta ${port} já está ocupada — o mais provável é já teres o PoolSync Agent aberto. O resto continua a funcionar.`);
+      return;
+    }
+    log('warn', `Prévia local indisponível (porta ${port}): ${e && e.message}`);
+  }
+  server.on('error', falhaDaPrevia);
+  wss.on('error', falhaDaPrevia);
   server.listen(port, '127.0.0.1', () => log('info', `Prévia local pronta em ws://localhost:${port}/preview`));
 
   return { close() { try { wss.close(); server.close(); } catch (_) {} } };
