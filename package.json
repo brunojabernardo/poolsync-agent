@@ -18,8 +18,8 @@
     ]
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "PoolSync",
+  "license": "MIT",
   "dependencies": {
     "dotenv": "^17.4.2",
     "obs-websocket-js": "^5.0.8",
