@@ -1,0 +1,94 @@
+# Constroi e publica o PoolSyncAgent.exe.
+#
+# Porque e' que isto existe: o executavel era construido na maquina do Bruno e
+# atirado a' mao para uma release. Quem o descarregava tinha de acreditar nele.
+# Feito aqui, qualquer pessoa pode ver DE QUE codigo saiu, com que comandos, e
+# conferir o ficheiro pelo SHA-256 — e o GitHub assina uma declaracao de
+# proveniencia que amarra aquele binario a este commit e a esta corrida.
+#
+# Nota: este ficheiro so' esta' activo no repositorio PUBLICO do agente
+# (brunojabernardo/poolsync-agent), onde a pasta `agent/` e' a raiz. No
+# repositorio da app fica adormecido, que e' o que se quer.
+name: Publicar o agente
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      etiqueta:
+        description: 'Etiqueta da release (ex: v0.2.0)'
+        required: true
+
+permissions:
+  contents: write        # criar a release e anexar o ficheiro
+  id-token: write        # assinar a proveniencia
+  attestations: write
+
+jobs:
+  construir:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Instalar as dependencias
+        run: npm ci
+
+      # Nada de binarios de confianca cega: o ajudante das camaras e' compilado
+      # aqui a partir do CamCtl.cs que esta' neste repositorio, e e' ESTE que
+      # vai dentro do executavel.
+      - name: Compilar o ajudante das camaras (DirectShow)
+        run: |
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (-not (Test-Path $csc)) { throw "csc do .NET Framework nao encontrado em $csc" }
+          & $csc /nologo /target:exe /platform:x64 /out:native\CamCtl.exe native\CamCtl.cs
+          if (-not (Test-Path native\CamCtl.exe)) { throw "o CamCtl.exe nao foi gerado" }
+
+      # Uma chave de um clube nunca pode ir dentro do executavel.
+      - name: Confirmar que nao vai nenhum segredo
+        run: |
+          if (Test-Path .env) { throw "existe um .env na arvore — nao pode ser empacotado" }
+          if (Test-Path poolsync.config.json) { throw "existe um poolsync.config.json na arvore" }
+
+      - name: Construir o executavel
+        run: npx pkg . --targets node22-win-x64 --output dist/PoolSyncAgent.exe
+
+      - name: Somar o SHA-256
+        id: soma
+        run: |
+          $h = (Get-FileHash dist\PoolSyncAgent.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  PoolSyncAgent.exe" | Out-File -Encoding ascii dist\PoolSyncAgent.exe.sha256
+          "sha=$h" >> $env:GITHUB_OUTPUT
+          Write-Host "SHA-256: $h"
+
+      # A declaracao de proveniencia: quem quiser confirma com
+      #   gh attestation verify PoolSyncAgent.exe -R brunojabernardo/poolsync-agent
+      - name: Assinar a proveniencia
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/PoolSyncAgent.exe
+
+      - name: Publicar na release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.etiqueta || github.ref_name }}
+          name: PoolSync Agent ${{ github.event.inputs.etiqueta || github.ref_name }}
+          body: |
+            Construido pelo GitHub a partir do codigo deste repositorio.
+
+            **SHA-256** do `PoolSyncAgent.exe`:
+            ```
+            ${{ steps.soma.outputs.sha }}
+            ```
+            Para confirmar o ficheiro que descarregaste (PowerShell):
+            ```powershell
+            Get-FileHash .\PoolSyncAgent.exe -Algorithm SHA256
+            ```
+          files: |
+            dist/PoolSyncAgent.exe
+            dist/PoolSyncAgent.exe.sha256

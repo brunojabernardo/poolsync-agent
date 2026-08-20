@@ -1,5 +1,7 @@
 # PoolSync Agent
 
+[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-blue.svg)](LICENSE)
+
 Processo local que corre na máquina do operador e controla o **OBS** em nome da
 app **PoolSync**. Liga-se ao OBS por WebSocket (`ws://localhost:4455`) e — quando
 configurado — liga-se ao servidor PoolSync por `wss://`, funcionando como ponte:
@@ -12,6 +14,36 @@ Porquê um agente e não o browser a falar direto com o OBS? Porque a app é ser
 em HTTPS e os browsers bloqueiam ligações `ws://` inseguras a partir de páginas
 HTTPS (mixed content). O agente, sendo um processo Node local, não tem essa
 limitação.
+
+## Não confies neste ficheiro — confirma-o
+
+O `.exe` que se descarrega **não é feito à mão por ninguém**: é construído pelo
+GitHub a partir do código que está aqui, pelo workflow
+[`publicar.yml`](.github/workflows/publicar.yml). De cada versão sai também o
+`PoolSyncAgent.exe.sha256`, para poderes confirmar que o ficheiro que tens é o
+mesmo que saiu daqui:
+
+```powershell
+Get-FileHash .\PoolSyncAgent.exe -Algorithm SHA256
+```
+
+E há uma declaração de proveniência assinada pelo GitHub, que amarra o binário
+ao commit e à corrida que o produziram:
+
+```bash
+gh attestation verify PoolSyncAgent.exe -R brunojabernardo/poolsync-agent
+```
+
+**O aviso do Windows.** Enquanto a aplicação não tiver assinatura de código, o
+SmartScreen mostra «*aplicação não reconhecida*»: **Mais informações → Executar
+mesmo assim**. O aviso é sobre a falta de assinatura, não sobre o conteúdo — e
+é por isso que o código está aqui à vista e o ficheiro é conferível.
+
+**O que o agente precisa e o que não precisa.** Fala com o OBS na tua máquina
+(`ws://localhost:4455`) e com o servidor PoolSync com uma **chave do teu
+clube**, que vem no `poolsync.config.json` e nunca está dentro do executável.
+Não abre nada à rede: a única porta que abre é a da pré-visualização de vídeo,
+presa a `127.0.0.1` e com verificação de origem.
 
 ## Pré-requisitos no OBS
 
@@ -73,8 +105,10 @@ npm install          # inclui a devDependency @yao-pkg/pkg
 npm run build        # → dist/PoolSyncAgent.exe (~60 MB)
 ```
 
-O `camera-boxes.json` vai embutido no `.exe`. Publica o `dist/PoolSyncAgent.exe`
-como asset de um **GitHub Release** com esse nome exato — o site aponta para
+Isto serve para experimentar. **A versão que se distribui não sai daqui**: sai
+do GitHub Actions, ao empurrar uma etiqueta `v*` (ou pelo botão *Run workflow*).
+O workflow compila o `native/CamCtl.cs`, empacota, soma o SHA-256, assina a
+proveniência e anexa tudo à release — o site aponta para
 `releases/latest/download/PoolSyncAgent.exe`.
 
 ### Fluxo do cliente (sem Node/terminal)
@@ -82,3 +116,7 @@ como asset de um **GitHub Release** com esse nome exato — o site aponta para
 1. Descarrega o `PoolSyncAgent.exe` e o `poolsync.config.json` (do site).
 2. Põe os dois na mesma pasta.
 3. Duplo-clique no `.exe`. Liga ao OBS local e ao servidor.
+
+## Licença
+
+MIT — ver [LICENSE](LICENSE).
