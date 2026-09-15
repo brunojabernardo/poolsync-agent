@@ -641,6 +641,50 @@ class ObsManager extends EventEmitter {
     return { locked: results.length, items: results };
   }
 
+  // ── TROCAR DE CENA COM UMA TRANSIÇÃO SÓ PARA ESTA TROCA ──
+  //
+  // O OBS escolhe a transição pela cena para onde se vai, e nunca pela de onde
+  // se sai. A saída da «Starting Soon» leva a PORTA (é a entrada de quem está a
+  // ver na transmissão), e é o servidor que sabe quando é esse o caso: manda
+  // `transition` com o setScene. Põe-se essa transição, troca-se de cena, e
+  // quando a transição acaba volta a de antes. Se a transição não existir neste
+  // OBS (uma coleção antiga), troca-se de cena na mesma, com a de sempre.
+  async _setSceneComTransicao(scene, transition) {
+    let antes = null;
+    try {
+      antes = (await this.obs.call('GetCurrentSceneTransition')).transitionName || null;
+      if (antes !== transition) await this.obs.call('SetCurrentSceneTransition', { transitionName: transition });
+    } catch (_) {
+      antes = null;
+      await this.obs.call('SetCurrentProgramScene', { sceneName: scene });
+      return;
+    }
+    if (!antes || antes === transition) {
+      await this.obs.call('SetCurrentProgramScene', { sceneName: scene });
+      return;
+    }
+    let repor = null;
+    const acabou = new Promise((resolve) => {
+      const fim = () => resolve();
+      this.obs.once('SceneTransitionEnded', fim);
+      // Um tecto, para nunca ficar preso na porta se o evento não vier.
+      repor = setTimeout(() => { this.obs.off('SceneTransitionEnded', fim); resolve(); }, 12000);
+    });
+    try {
+      await this.obs.call('SetCurrentProgramScene', { sceneName: scene });
+    } catch (e) {
+      clearTimeout(repor);
+      await this.obs.call('SetCurrentSceneTransition', { transitionName: antes }).catch(() => {});
+      throw e;
+    }
+    // Não se espera aqui: a resposta ao painel vai já, e a transição de sempre
+    // volta sozinha quando esta acabar.
+    acabou.then(() => {
+      clearTimeout(repor);
+      return this.obs.call('SetCurrentSceneTransition', { transitionName: antes });
+    }).catch(() => {});
+  }
+
   // ── Streaming destination ──
   // Never echoes the stream key back (only whether one is set).
   async _getStreamSettings() {
@@ -865,7 +909,8 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._setCameraControl(params) };
 
         case 'setScene':
-          await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });
+          if (params.transition) await this._setSceneComTransicao(params.scene, params.transition);
+          else await this.obs.call('SetCurrentProgramScene', { sceneName: params.scene });
           break;
         case 'setPreviewScene':
           await this.obs.call('SetCurrentPreviewScene', { sceneName: params.scene });
