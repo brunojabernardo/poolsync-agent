@@ -107,7 +107,7 @@ npm run build        # → dist/PoolSyncAgent.exe (~60 MB)
 
 Isto serve para experimentar. **A versão que se distribui não sai daqui**: sai
 do GitHub Actions, ao empurrar uma etiqueta `v*` (ou pelo botão *Run workflow*).
-O workflow compila o `native/CamCtl.cs`, empacota, soma o SHA-256, assina a
+O workflow empacota, soma o SHA-256, assina a
 proveniência e anexa tudo à release — o site aponta para
 `releases/latest/download/PoolSyncAgent.exe`.
 

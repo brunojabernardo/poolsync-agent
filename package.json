@@ -1,6 +1,6 @@
 {
   "name": "poolsync-agent",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "commonjs",
   "description": "PoolSync Agent — controla o OBS local em nome da app PoolSync",
   "main": "index.js",
@@ -9,13 +9,7 @@
     "start": "node index.js",
     "status": "node index.js status",
     "scenes": "node index.js scenes",
-    "build:native": "csc /nologo /target:exe /platform:x64 /out:native\\CamCtl.exe native\\CamCtl.cs",
     "build": "pkg . --targets node22-win-x64 --output dist/PoolSyncAgent.exe"
-  },
-  "pkg": {
-    "assets": [
-      "native/CamCtl.exe"
-    ]
   },
   "keywords": [],
   "author": "PoolSync",

@@ -39,16 +39,6 @@ jobs:
       - name: Instalar as dependencias
         run: npm ci
 
-      # Nada de binarios de confianca cega: o ajudante das camaras e' compilado
-      # aqui a partir do CamCtl.cs que esta' neste repositorio, e e' ESTE que
-      # vai dentro do executavel.
-      - name: Compilar o ajudante das camaras (DirectShow)
-        run: |
-          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          if (-not (Test-Path $csc)) { throw "csc do .NET Framework nao encontrado em $csc" }
-          & $csc /nologo /target:exe /platform:x64 /out:native\CamCtl.exe native\CamCtl.cs
-          if (-not (Test-Path native\CamCtl.exe)) { throw "o CamCtl.exe nao foi gerado" }
-
       # Uma chave de um clube nunca pode ir dentro do executavel.
       - name: Confirmar que nao vai nenhum segredo
         run: |

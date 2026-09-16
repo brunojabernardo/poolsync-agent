@@ -29,15 +29,14 @@ function startLocalPreview(config, obs, log) {
 
   let looping = false;
 
-  // Each client subscribes to a set of sources: '__program__' for the on-air
-  // preview, plus camera input names while the setup panel is open.
+  // Só se mostra o que está no ar ('__program__').
   wss.on('connection', (ws) => {
     ws._sources = ['__program__'];
     ws.on('message', (raw) => {
       try {
         const m = JSON.parse(String(raw));
         if (m && m.type === 'subscribe' && Array.isArray(m.sources)) {
-          ws._sources = m.sources.filter((s) => typeof s === 'string').slice(0, 12);
+          ws._sources = m.sources.filter((s) => s === '__program__').slice(0, 1);
         }
       } catch (_) {}
     });
@@ -79,11 +78,6 @@ function startLocalPreview(config, obs, log) {
         if (source === '__program__') {
           const res = await obs.execute('getProgramPreview');
           if (res && res.ok && res.data) image = res.data.image;
-        } else if (obs.connected) {
-          const shot = await obs.obs.call('GetSourceScreenshot', {
-            sourceName: source, imageFormat: 'jpg', imageWidth: 640, imageCompressionQuality: 70
-          });
-          image = shot.imageData || null;
         }
       } catch (_) {}
       if (image) broadcast(source, image);
