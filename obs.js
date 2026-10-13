@@ -6,6 +6,8 @@
 //   - 'state'  (snapshot)  → emitted whenever the mirrored state changes
 //   - 'log'    (level,msg) → human-readable progress for the console
 const EventEmitter = require('events');
+const fs = require('node:fs');
+const path = require('node:path');
 const OBSWebSocket = require('obs-websocket-js').default;
 
 // The set of high-level actions the app is allowed to trigger. Each maps to one
@@ -24,7 +26,9 @@ const ACTIONS = new Set([
   // Streaming destination (RTMP service + key)
   'getStreamSettings', 'setStreamSettings',
   // Live program preview (screenshot of what's on air)
-  'getProgramPreview'
+  'getProgramPreview',
+  // Os clips das transicoes, do endereco para um ficheiro no disco
+  'fixStingers'
 ]);
 
 // Named OBS services + the EXACT ingest server OBS expects for each (read from
@@ -340,6 +344,77 @@ class ObsManager extends EventEmitter {
     }).catch(() => {});
   }
 
+  // ── AS TRANSIÇÕES COM CLIP, E O «FICHEIRO EM FALTA» ──────────────────────
+  //
+  // A coleção sai do servidor com as transições apontadas a um ENDEREÇO
+  // (`https://.../transition_poolsync.webm`), porque um caminho de ficheiro só
+  // existe no computador de quem o tem. O OBS lê o clip pelo ffmpeg e ele até
+  // toca — mas quando confere a coleção procura um ficheiro no disco, não o
+  // encontra, e abre a caixa dos «ficheiros em falta». Pior: quem carregar ali
+  // em limpar fica sem transição nenhuma.
+  //
+  // Isto desfaz o nó do lado certo: o agente está na máquina de quem transmite,
+  // descarrega o clip uma vez para a pasta dele, e escreve no OBS o caminho
+  // local. Deixa de haver ficheiro em falta.
+  //
+  // ⚠️ O OBS SÓ DEIXA LER E ESCREVER A TRANSIÇÃO ACTUAL (o protocolo não tem
+  // «settings da transição X»), por isso passa-se por cada uma e repõe-se a que
+  // estava no fim. Durante a emissão NÃO se mexe nisto: trocar a transição
+  // actual a meio de um direto é mexer no que está no ar.
+  async _fixStingers() {
+    const estado = await this.obs.call('GetStreamStatus').catch(() => ({ outputActive: false }));
+    const arec = await this.obs.call('GetRecordStatus').catch(() => ({ outputActive: false }));
+    if (estado.outputActive || arec.outputActive) return { skipped: 'no ar' };
+
+    const lista = await this.obs.call('GetSceneTransitionList');
+    const clips = (lista.transitions || []).filter((t) => t && t.transitionKind === 'obs_stinger_transition');
+    if (!clips.length) return { fixed: 0, total: 0 };
+
+    const antes = lista.currentSceneTransitionName || null;
+    const pasta = path.join(this.config.baseDir || process.cwd(), 'clips');
+    const feitos = [];
+    try {
+      for (const t of clips) {
+        await this.obs.call('SetCurrentSceneTransition', { transitionName: t.transitionName });
+        const agora = await this.obs.call('GetCurrentSceneTransition');
+        const settings = agora.transitionSettings || {};
+        const caminho = String(settings.path || '');
+        if (!/^https?:\/\//i.test(caminho)) continue;        // já é um ficheiro: não se toca
+        const local = await this._guardaClip(caminho, pasta);
+        if (!local) continue;
+        await this.obs.call('SetCurrentSceneTransitionSettings', {
+          transitionSettings: Object.assign({}, settings, { path: local }),
+          overlay: true
+        });
+        feitos.push({ transicao: t.transitionName, ficheiro: local });
+      }
+    } finally {
+      if (antes) await this.obs.call('SetCurrentSceneTransition', { transitionName: antes }).catch(() => {});
+    }
+    return { fixed: feitos.length, total: clips.length, items: feitos };
+  }
+
+  // Descarrega o clip uma vez. Já cá estando com o mesmo tamanho, fica.
+  async _guardaClip(url, pasta) {
+    const nome = (url.split('/').pop() || 'transicao.webm').split('?')[0].replace(/[^\w.-]/g, '');
+    const destino = path.join(pasta, nome);
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const dados = Buffer.from(await r.arrayBuffer());
+      if (!dados.length) throw new Error('veio vazio');
+      if (fs.existsSync(destino) && fs.statSync(destino).size === dados.length) return destino;
+      fs.mkdirSync(pasta, { recursive: true });
+      fs.writeFileSync(destino, dados);
+      this.emit('log', 'info', `Clip da transição guardado: ${destino} (${(dados.length / 1024).toFixed(0)} KB)`);
+      return destino;
+    } catch (e) {
+      // Sem rede ou sem clip, fica como estava: o endereço continua a tocar.
+      this.emit('log', 'warn', `Não consegui guardar o clip ${url}: ${e && e.message ? e.message : e}`);
+      return fs.existsSync(destino) ? destino : null;
+    }
+  }
+
   // ── Streaming destination ──
   // Never echoes the stream key back (only whether one is set).
   async _getStreamSettings() {
@@ -420,6 +495,8 @@ class ObsManager extends EventEmitter {
           return { ok: true, data: await this._setStreamSettings(params) };
         case 'getProgramPreview':
           return { ok: true, data: await this._getProgramPreview() };
+        case 'fixStingers':
+          return { ok: true, data: await this._fixStingers() };
 
         case 'setScene':
           if (params.transition) await this._setSceneComTransicao(params.scene, params.transition);

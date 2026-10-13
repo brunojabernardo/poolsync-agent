@@ -101,9 +101,16 @@ pré-preenchido para o cliente:
 Gera um `.exe` Windows autónomo (sem Node instalado no cliente):
 
 ```bash
-npm install          # inclui a devDependency @yao-pkg/pkg
-npm run build        # → dist/PoolSyncAgent.exe (~60 MB)
+npm install          # inclui o @yao-pkg/pkg e o rcedit
+npm run build        # → dist/PoolSyncAgent.exe (~60 MB), com o ícone do PoolSync
 ```
+
+O `construir.js` faz três coisas por esta ordem, e a ordem é o truque: busca a
+base do Node, põe-lhe o **ícone** (o logótipo redondo, `icone.ico`) com o
+rcedit, e só depois empacota por cima dela. ⚠️ Pôr o ícone no `.exe` **já
+empacotado** estraga-o: o pkg deixa a aplicação colada depois da última secção
+do ficheiro e o rcedit deita essa cauda fora. O ícone refaz-se do logótipo com
+`node scripts/fazer-icone.js`, no repositório da app.
 
 Isto serve para experimentar. **A versão que se distribui não sai daqui**: sai
 do GitHub Actions, ao empurrar uma etiqueta `v*` (ou pelo botão *Run workflow*).

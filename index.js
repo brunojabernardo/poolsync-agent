@@ -95,6 +95,14 @@ async function runOneShot(command, arg) {
       res.data.items.forEach((i) => { (byScene[i.scene] = byScene[i.scene] || []).push(`${i.camera}=${i.box}`); });
       for (const [scn, list] of Object.entries(byScene)) console.log(`  ${scn}: ${list.join(', ')}`);
     }
+  } else if (command === 'transicoes') {
+    const res = await obs.execute('fixStingers');
+    if (!res.ok) logLine('error', res.error);
+    else if (res.data.skipped) logLine('warn', `Nao mexi nas transicoes: ${res.data.skipped}.`);
+    else {
+      logLine('info', `Transicoes com clip: ${res.data.fixed} de ${res.data.total} apontadas a um ficheiro local.`);
+      (res.data.items || []).forEach((i) => console.log(`  ${i.transicao} → ${i.ficheiro}`));
+    }
   } else if (command === 'scene') {
     if (!arg) { logLine('error', 'Falta o nome da cena: node index.js scene "Nome"'); }
     else {
@@ -135,6 +143,15 @@ async function runAgent() {
     if (s.obsConnected && !didAutoLock) {
       didAutoLock = true;
       autoLock();
+      // E as transicoes com clip apontadas a um ficheiro no disco, para o OBS
+      // nao andar a dizer «ficheiro em falta» a cada arranque (ver `_fixStingers`).
+      obs.execute('fixStingers')
+        .then((r) => {
+          if (!r || !r.ok || !r.data) return;
+          if (r.data.skipped) return;                 // a emitir: nao se mexe
+          if (r.data.fixed) logLine('info', `Transicoes com clip arrumadas (${r.data.fixed}).`);
+        })
+        .catch(() => {});
     }
   });
 

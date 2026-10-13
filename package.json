@@ -9,7 +9,7 @@
     "start": "node index.js",
     "status": "node index.js status",
     "scenes": "node index.js scenes",
-    "build": "pkg . --targets node22-win-x64 --output dist/PoolSyncAgent.exe"
+    "build": "node construir.js"
   },
   "keywords": [],
   "author": "PoolSync",
@@ -21,6 +21,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@yao-pkg/pkg": "^6.21.0"
+    "@yao-pkg/pkg": "^6.21.0",
+    "rcedit": "^4.0.1"
   }
 }

@@ -45,8 +45,12 @@ jobs:
           if (Test-Path .env) { throw "existe um .env na arvore — nao pode ser empacotado" }
           if (Test-Path poolsync.config.json) { throw "existe um poolsync.config.json na arvore" }
 
-      - name: Construir o executavel
-        run: npx pkg . --targets node22-win-x64 --output dist/PoolSyncAgent.exe
+      # O `npm run build` e' o `construir.js`: descarrega a base do Node, poe-lhe
+      # o icone redondo do PoolSync com o rcedit, e so' depois empacota por
+      # cima dela. O icone TEM de ir na base — rceditar o .exe ja' empacotado
+      # deita fora a aplicacao colada no fim e o executavel morre.
+      - name: Construir o executavel (com o icone)
+        run: npm run build
 
       - name: Somar o SHA-256
         id: soma
