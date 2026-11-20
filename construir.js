@@ -1,8 +1,8 @@
 'use strict';
 
-// CONSTRÓI O PoolSyncAgent.exe, com o logótipo redondo do PoolSync.
+// CONSTRÓI O BilliardSyncAgent.exe, com o logótipo redondo do BilliardSync.
 //
-//   npm run build        → dist/PoolSyncAgent.exe
+//   npm run build        → dist/BilliardSyncAgent.exe
 //
 // Porque é que isto não é uma linha de `pkg`: o pkg não sabe pôr ícones. Quem
 // os põe é o `rcedit`, e a ordem é que é o truque.
@@ -28,7 +28,7 @@ const RAIZ = __dirname;
 const DIST = path.join(RAIZ, 'dist');
 const BASE_DIR = path.join(DIST, 'base');
 const ICONE = path.join(RAIZ, 'icone.ico');
-const SAIDA = path.join(DIST, 'PoolSyncAgent.exe');
+const SAIDA = path.join(DIST, 'BilliardSyncAgent.exe');
 const ALVO = 'node22-win-x64';
 
 // O rcedit é um programa do Windows. Em Linux/macOS precisava de Wine, e a
@@ -64,10 +64,10 @@ if (noWindows && fs.existsSync(ICONE)) {
   corre(rcedit, [
     base,
     '--set-icon', ICONE,
-    '--set-version-string', 'ProductName', 'PoolSync Agent',
-    '--set-version-string', 'CompanyName', 'PoolSync',
-    '--set-version-string', 'FileDescription', 'PoolSync Agent - liga o OBS ao PoolSync',
-    '--set-version-string', 'LegalCopyright', 'PoolSync - MIT',
+    '--set-version-string', 'ProductName', 'BilliardSync Agent',
+    '--set-version-string', 'CompanyName', 'BilliardSync',
+    '--set-version-string', 'FileDescription', 'BilliardSync Agent - liga o OBS ao BilliardSync',
+    '--set-version-string', 'LegalCopyright', 'BilliardSync - MIT',
   ]);
 } else {
   console.log('(sem icone: ' + (noWindows ? 'falta o icone.ico' : 'o rcedit so corre no Windows') + ')');

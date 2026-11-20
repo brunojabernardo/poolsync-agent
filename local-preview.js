@@ -22,7 +22,7 @@ function startLocalPreview(config, obs, log) {
 
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('PoolSync local preview');
+    res.end('BilliardSync local preview');
   });
   // Reject disallowed origins during the handshake (before the socket opens).
   const wss = new WebSocketServer({ server, path: '/preview', verifyClient: (info) => originOk(info.origin) });
@@ -99,7 +99,7 @@ function startLocalPreview(config, obs, log) {
     if (jaAvisou) return;
     jaAvisou = true;
     if (e && e.code === 'EADDRINUSE') {
-      log('warn', `Prévia local indisponível: a porta ${port} já está ocupada — o mais provável é já teres o PoolSync Agent aberto. O resto continua a funcionar.`);
+      log('warn', `Prévia local indisponível: a porta ${port} já está ocupada — o mais provável é já teres o BilliardSync Agent aberto. O resto continua a funcionar.`);
       return;
     }
     log('warn', `Prévia local indisponível (porta ${port}): ${e && e.message}`);

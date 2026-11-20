@@ -1,5 +1,5 @@
-// PoolSync Agent — runs on the operator's machine, controls the local OBS on
-// behalf of the PoolSync app.
+// BilliardSync Agent (until 20/11/2026, PoolSync Agent): runs on the operator's
+// machine, controls the local OBS on behalf of the BilliardSync app.
 //
 // Usage:
 //   node index.js            Run the agent (connect to OBS + server, stay alive)
@@ -27,7 +27,7 @@ function logLine(level, msg) {
 
 function banner() {
   console.log('==================================');
-  console.log(' PoolSync Agent — App ↔ OBS');
+  console.log(' BilliardSync Agent · App ↔ OBS');
   console.log('==================================');
   console.log(` OBS:      ${config.obs.url}`);
   console.log(` Servidor: ${config.server.enabled ? config.server.url : '(modo local — sem ligação ao servidor)'}`);

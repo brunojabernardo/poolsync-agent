@@ -1,13 +1,13 @@
-# PoolSync Agent
+# BilliardSync Agent
 
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-blue.svg)](LICENSE)
 
 Processo local que corre na máquina do operador e controla o **OBS** em nome da
-app **PoolSync**. Liga-se ao OBS por WebSocket (`ws://localhost:4455`) e — quando
-configurado — liga-se ao servidor PoolSync por `wss://`, funcionando como ponte:
+app **BilliardSync**. Liga-se ao OBS por WebSocket (`ws://localhost:4455`) e — quando
+configurado — liga-se ao servidor BilliardSync por `wss://`, funcionando como ponte:
 
 ```
-Admin (browser) ──wss──▶ PoolSync (servidor) ◀──wss── PoolSync Agent ──ws──▶ OBS
+Admin (browser) ──wss──▶ BilliardSync (servidor) ◀──wss── BilliardSync Agent ──ws──▶ OBS
 ```
 
 Porquê um agente e não o browser a falar direto com o OBS? Porque a app é servida
@@ -20,18 +20,18 @@ limitação.
 O `.exe` que se descarrega **não é feito à mão por ninguém**: é construído pelo
 GitHub a partir do código que está aqui, pelo workflow
 [`publicar.yml`](.github/workflows/publicar.yml). De cada versão sai também o
-`PoolSyncAgent.exe.sha256`, para poderes confirmar que o ficheiro que tens é o
+`BilliardSyncAgent.exe.sha256`, para poderes confirmar que o ficheiro que tens é o
 mesmo que saiu daqui:
 
 ```powershell
-Get-FileHash .\PoolSyncAgent.exe -Algorithm SHA256
+Get-FileHash .\BilliardSyncAgent.exe -Algorithm SHA256
 ```
 
 E há uma declaração de proveniência assinada pelo GitHub, que amarra o binário
 ao commit e à corrida que o produziram:
 
 ```bash
-gh attestation verify PoolSyncAgent.exe -R brunojabernardo/poolsync-agent
+gh attestation verify BilliardSyncAgent.exe -R brunojabernardo/poolsync-agent
 ```
 
 **O aviso do Windows.** Enquanto a aplicação não tiver assinatura de código, o
@@ -40,8 +40,8 @@ mesmo assim**. O aviso é sobre a falta de assinatura, não sobre o conteúdo �
 é por isso que o código está aqui à vista e o ficheiro é conferível.
 
 **O que o agente precisa e o que não precisa.** Fala com o OBS na tua máquina
-(`ws://localhost:4455`) e com o servidor PoolSync com uma **chave do teu
-clube**, que vem no `poolsync.config.json` e nunca está dentro do executável.
+(`ws://localhost:4455`) e com o servidor BilliardSync com uma **chave do teu
+clube**, que vem no `billiardsync.config.json` e nunca está dentro do executável.
 Não abre nada à rede: a única porta que abre é a da pré-visualização de vídeo,
 presa a `127.0.0.1` e com verificação de origem.
 
@@ -84,7 +84,7 @@ caixas certas (layout imune à resolução).
 
 ## Configuração via ficheiro (para o `.exe`)
 
-Além do `.env`, o agente lê um `poolsync.config.json` **na mesma pasta do
+Além do `.env`, o agente lê um `billiardsync.config.json` **na mesma pasta do
 executável**, com prioridade sobre o `.env`. É este o ficheiro que o site gera
 pré-preenchido para o cliente:
 
@@ -102,7 +102,7 @@ Gera um `.exe` Windows autónomo (sem Node instalado no cliente):
 
 ```bash
 npm install          # inclui o @yao-pkg/pkg e o rcedit
-npm run build        # → dist/PoolSyncAgent.exe (~60 MB), com o ícone do PoolSync
+npm run build        # → dist/BilliardSyncAgent.exe (~60 MB), com o ícone do BilliardSync
 ```
 
 O `construir.js` faz três coisas por esta ordem, e a ordem é o truque: busca a
@@ -116,11 +116,11 @@ Isto serve para experimentar. **A versão que se distribui não sai daqui**: sai
 do GitHub Actions, ao empurrar uma etiqueta `v*` (ou pelo botão *Run workflow*).
 O workflow empacota, soma o SHA-256, assina a
 proveniência e anexa tudo à release — o site aponta para
-`releases/latest/download/PoolSyncAgent.exe`.
+`releases/latest/download/BilliardSyncAgent.exe`.
 
 ### Fluxo do cliente (sem Node/terminal)
 
-1. Descarrega o `PoolSyncAgent.exe` e o `poolsync.config.json` (do site).
+1. Descarrega o `BilliardSyncAgent.exe` e o `billiardsync.config.json` (do site).
 2. Põe os dois na mesma pasta.
 3. Duplo-clique no `.exe`. Liga ao OBS local e ao servidor.
 

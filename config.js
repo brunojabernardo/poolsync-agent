@@ -1,7 +1,8 @@
 // Loads and validates the agent configuration.
 //
 // Sources (highest priority first):
-//   1. poolsync.config.json next to the executable  ← used by the packaged .exe
+//   1. billiardsync.config.json next to the executable  ← used by the packaged .exe
+//      (the old poolsync.config.json is still read, for agents set up before 20/11/2026)
 //   2. environment variables / .env next to the executable  ← used in dev
 //
 // Both files sit next to the running program (the .exe when packaged, this
@@ -18,7 +19,10 @@ require('dotenv').config({ path: path.join(baseDir, '.env') });
 
 let fileCfg = {};
 try {
-  const p = path.join(baseDir, 'poolsync.config.json');
+  // O NOME NOVO (20/11/2026), e o antigo para quem ja' o tem ao lado do .exe.
+  const novo = path.join(baseDir, 'billiardsync.config.json');
+  const antigo = path.join(baseDir, 'poolsync.config.json');
+  const p = fs.existsSync(novo) ? novo : antigo;
   if (fs.existsSync(p)) fileCfg = JSON.parse(fs.readFileSync(p, 'utf8')) || {};
 } catch (_) {
   fileCfg = {};
@@ -46,7 +50,7 @@ const config = {
     password: String(val('OBS_PASSWORD', ''))
   },
 
-  // PoolSync server the agent relays through. Empty SERVER_URL = local-only
+  // BilliardSync server the agent relays through. Empty SERVER_URL = local-only
   // mode (OBS control via CLI, no cloud link) — handy for first tests.
   server: {
     url: String(val('SERVER_URL', '')).trim(),

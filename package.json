@@ -1,8 +1,8 @@
 {
-  "name": "poolsync-agent",
-  "version": "0.3.0",
+  "name": "billiardsync-agent",
+  "version": "0.4.0",
   "type": "commonjs",
-  "description": "PoolSync Agent — controla o OBS local em nome da app PoolSync",
+  "description": "BilliardSync Agent: controla o OBS local em nome da app BilliardSync",
   "main": "index.js",
   "bin": "index.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "build": "node construir.js"
   },
   "keywords": [],
-  "author": "PoolSync",
+  "author": "BilliardSync",
   "license": "MIT",
   "dependencies": {
     "dotenv": "^17.4.2",
